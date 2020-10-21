@@ -1,17 +1,17 @@
-The parser to synchronise user data from .csv with database.
-
-Update settings:
-- specify DB settings
-- set up file location constants UPDATE_DIR_PATH and UPDATE_FILENAME
-
-Console command to run the parser:
-php artisan parser:update
-
-You're going to get output like:
-[21:46:16] Update passed
-New entries: 0
-Deleted entries: 0
-Restored entries: 0
-Updated entries: 3
-Rejected entries: 3
+The parser to synchronise user data from .csv with database.<br>
+<br>
+Update settings:<br>
+- specify DB settings<br>
+- set up file location constants UPDATE_DIR_PATH and UPDATE_FILENAME<br>
+<br>
+Console command to run the parser:<br>
+php artisan parser:update<br>
+<br>
+You're going to get output like:<br>
+[21:46:16] Update passed<br>
+New entries: 0<br>
+Deleted entries: 0<br>
+Restored entries: 0<br>
+Updated entries: 3<br>
+Rejected entries: 3<br>
 
