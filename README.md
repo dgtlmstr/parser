@@ -14,4 +14,9 @@ Deleted entries: 0<br>
 Restored entries: 0<br>
 Updated entries: 3<br>
 Rejected entries: 3<br>
-
+<br>
+or:<br>
+[09:53:49] Update failed. Parsing failed<br>
+<br>
+or:<br>
+[10:03:01] Update failed. File not found<br>
