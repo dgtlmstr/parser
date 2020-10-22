@@ -69,4 +69,22 @@ class Filer
     public function fileRemove() {
         //File::delete($this->getFilePath());
     }
+
+    /**
+     * Return true in case of empty file, otherwise false
+     *
+     * @return bool
+     */
+    public function isFileEmpty() {
+        return File::size($this->getFilePath()) == 0;
+    }
+
+    /**
+     * Return file pointer to read data from file
+     *
+     * @return false|resource
+     */
+    public function getFilePointerForReading() {
+        return fopen($this->getFilePath(), 'r');
+    }
 }

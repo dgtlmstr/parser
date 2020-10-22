@@ -3,9 +3,13 @@
 namespace App\Repositories;
 
 use App\DTO\UpdateSummaryDTO;
+use App\DTO\UserdataDTO;
 use App\Models\Userdata;
+use App\Services\CsvParser;
 use App\Services\Filer;
 use Illuminate\Support\Facades\DB;
+use Mockery\Exception;
+use PDO;
 
 class UserdataRepository
 {
@@ -21,7 +25,14 @@ class UserdataRepository
      *
      * @var Userdata
      */
+
     private $model;
+    /**
+     * The Csv Parser instance.
+     *
+     * @var CsvParser
+     */
+    private $csvParser;
 
 
     /**
@@ -30,9 +41,53 @@ class UserdataRepository
      * @param Userdata $model
      * @param UpdateSummaryDTO $summary
      */
-    public function __construct(Userdata $model, UpdateSummaryDTO $summary){
+    public function __construct(Userdata $model, UpdateSummaryDTO $summary, CsvParser $csvParser){
         $this->model = $model;
         $this->summary = $summary;
+        $this->csvParser = $csvParser;
+    }
+
+    /**
+     * Upload user data from a .csv file to userdata service table.
+     * Todo: get warnings/errors info from MySQL and trigger exception on parsing errors/warnings.
+     *
+     * @param Filer $filer
+     *
+     * @throws \Exception
+     * @deprecated
+     */
+    public function uploadUpdateLoadInfile(Filer $filer) {
+        $filePath = $filer->getFilePath();
+
+        // works ok
+        $pdo = DB::connection()->getpdo();
+        $pdo->exec(
+            "LOAD DATA LOCAL INFILE '$filePath'
+            INTO TABLE userdata
+            FIELDS TERMINATED BY '\\t'
+            LINES TERMINATED BY '\\n'
+            IGNORE 1 LINES
+            (customer_id, first_name, last_name, card_number)"
+        );
+
+        // doesn't work
+        /*$pdo = DB::connection()->getpdo();
+        $statement = $pdo->prepare(
+            "LOAD DATA LOCAL INFILE '?'
+            INTO TABLE userdata
+            FIELDS TERMINATED BY '\\t'
+            LINES TERMINATED BY '\\n'
+            IGNORE 1 LINES
+            (customer_id, first_name, last_name, card_number)"
+        );
+        $statement->execute([$filePath]);
+        unset($statement);*/
+
+        //Todo: handle warning count and trigger exception on errors/warnings
+        //$warningCount = DB::select(DB::raw('SELECT @@warning_count'));
+        $statement = $pdo->prepare('SHOW COUNT(*) WARNINGS', [PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => false]);
+        $statement->execute();
+        $x = $statement->fetchAll();
     }
 
     /**
@@ -44,19 +99,12 @@ class UserdataRepository
      * @throws \Exception
      */
     public function uploadUpdate(Filer $filer) {
-        $filePath = $filer->getFilePath();
+        if ($filer->isFileEmpty()) {
+            throw new \Exception('Empty file');
+        }
 
-        DB::connection()->getpdo()->exec(
-            "LOAD DATA LOCAL INFILE '$filePath'
-            INTO TABLE userdata
-            FIELDS TERMINATED BY '\\t'
-            LINES TERMINATED BY '\\n'
-            IGNORE 1 LINES
-            (customer_id, first_name, last_name, card_number)"
-        );
-
-        //Todo: handle warning count and trigger exception
-        //$warningCount = DB::select(DB::raw('SELECT @@warning_count'));
+        $callback = [$this, "addRowCallback"];
+        $this->csvParser->parse($filer, $callback);
     }
 
     /**
@@ -253,7 +301,7 @@ class UserdataRepository
      */
     protected function getDeletedCount() {
         $result = DB::selectOne(DB::raw(
-            "SELECT COUNT(*) num FROM customers c WHERE c.deleted_at IS NOT NULL
+            "SELECT COUNT(*) num FROM customers c WHERE c.deleted_at IS NULL
             AND c.id NOT IN (SELECT u.customer_id FROM userdata u)"
         ));
 
@@ -295,7 +343,7 @@ class UserdataRepository
         DB::statement(
             "UPDATE customers c
             SET c.deleted_at = NOW()
-            WHERE c.id NOT IN (SELECT u.customer_id FROM userdata u)"
+            WHERE c.id NOT IN (SELECT u.customer_id FROM userdata u) AND c.deleted_at IS NULL"
         );
     }
 
@@ -311,4 +359,35 @@ class UserdataRepository
         );
     }
 
+    /**
+     * Method to be passed as a callbback to CSV parser.
+     * Adding new entry to userdata.
+     * Expect array [integer (customer_id), string (first_name), string (last_name), string (card_number)] as an input parameter.
+     *
+     * @param array $row
+     */
+    public function addRowCallback(array $row) {
+        if (count($row) != 4) {
+            throw new \Exception('CSV parsing error');
+        }
+
+        if ((string)(int)$row[0] != $row[0] ||
+            strlen($row[1]) > 255 ||
+            strlen($row[2]) > 255 ||
+            strlen($row[3]) > 255) {
+
+            throw new \Exception('CSV parsing error');
+        }
+
+        $this->addRow(new UserdataDTO($row[0], $row[1], $row[2], $row[3]));
+    }
+
+    /**
+     * Adding new row to the userdata table
+     *
+     * @param UserdataDTO $userdata
+     */
+    public function addRow(UserdataDTO $userdata) {
+        DB::insert("INSERT INTO userdata(customer_id, first_name, last_name, card_number) values(?, ?, ?, ?)", $userdata->toArray());
+    }
 }
