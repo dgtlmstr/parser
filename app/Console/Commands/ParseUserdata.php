@@ -51,13 +51,7 @@ class ParseUserdata extends Command
         switch ($result) {
             case Parser::PARSER_OK:
                 $stats = $this->parser->getSummary();
-                $this->line(date('[H:i:s] ') . "Update passed");
-                $this->line(sprintf('New entries: %d', $stats->getNewEntries()));
-                $this->line(sprintf('Deleted entries: %d', $stats->getDeletedEntries()));
-                $this->line(sprintf('Restored entries: %d', $stats->getRestoredEntries()));
-                $this->line(sprintf('Updated entries: %d', $stats->getUpdatedEntries()));
-                $this->line(sprintf('Rejected entries: %d', $stats->getRejectedEntries()));
-
+                $this->line(date('[H:i:s] ') . "Update ok");
                 $this->parser->DeleteUpdate();
                 break;
 

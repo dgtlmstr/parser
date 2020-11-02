@@ -39,14 +39,23 @@ class UserdataRepository
      */
     private $model;
 
+    /**
+     * The Customer Repository instance.
+     *
+     * @var CustomerRepository
+     */
+    private $customerRepository;
+
 
     /**
      * Create a new Userdata Repository instance.
      *
      * @param Userdata $model
+     * @param CustomerRepository $customerRepository
      */
-    public function __construct(Userdata $model){
+    public function __construct(Userdata $model, CustomerRepository $customerRepository){
         $this->model = $model;
+        $this->customerRepository = $customerRepository;
     }
 
     /**
@@ -112,10 +121,8 @@ class UserdataRepository
             $table->string('last_name', 30);
             $table->string('card_number');
             $table->integer('status_id')->default(self::ENTRY_STATUS_UNKNOWN);
-            $table->unsignedBigInteger('idr')->default(0);
             $table->index(['identifier']);
             $table->index(['card_number']);
-            $table->index(['idr']);
             $table->index(['status_id']);
         });
     }
@@ -251,6 +258,26 @@ class UserdataRepository
             ->first();
 
         return $result->total;
+    }
+
+    /**
+     * Delete rows from database.
+     * Trigger event on each deletion.
+     *
+     * @todo Put all rows that can't be deleted to can_not delete list.
+     */
+    public function deleteRows() {
+        $cursor = DB::table(self::WORK_TABLE_NAME .' as u1')
+            ->rightJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
+            ->whereRaw('u2.deleted_at IS NULL AND u1.id IS NULL')
+            ->select('u2.id')
+            ->cursor();
+
+        foreach ($cursor as $row) {
+            $this->customerRepository->deleteRow($row->id);
+
+            //trigger event
+        }
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Models\Customer;
+use Illuminate\Support\Facades\DB;
 
 class CustomerRepository
 {
@@ -22,4 +23,15 @@ class CustomerRepository
         $this->customer = $customer;
     }
 
+    /**
+     * Soft delete row by id.
+     *
+     * @param $id
+     */
+    public function deleteRow($id)
+    {
+        DB::table($this->customer->getTable())
+            ->where('id', $id)
+            ->update(['deleted_at' => DB::raw('NOW()')]);
+    }
 }

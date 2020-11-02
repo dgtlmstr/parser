@@ -122,16 +122,14 @@ class Parser {
 
         $this->validateUpdate();
         $this->findDifference();
-        $summary = $this->calcSummary();
+        $this->summary = $this->calcSummary();
 
-        if ($summary->getToDelete() >= self::UPDATE_THRESHOLD_LIMIT ||
-            $summary->getToUpdate() >= self::UPDATE_THRESHOLD_LIMIT) {
+        if ($this->summary->getToDelete() >= self::UPDATE_THRESHOLD_LIMIT ||
+            $this->summary->getToUpdate() >= self::UPDATE_THRESHOLD_LIMIT) {
             return self::PARSER_ABOVE_THRESHOLD;
         }
 
-        $this->userdataRepository->applyUpdate();
-
-        $this->summary = $this->userdataRepository->getSummary();
+        $this->applyUpdate();
 
         return self::PARSER_OK;
     }
@@ -275,5 +273,17 @@ class Parser {
      */
     protected function calcSummary() : UpdateSummaryDTO {
         return $this->userdataRepository->getSummary();
+    }
+
+    /**
+     * Apply all inserts, updates, deletes and restores.
+     * Trigger events
+     */
+    protected function applyUpdate() {
+        $this->userdataRepository->deleteRows();
+        //$this->userdataRepository->restoreRows();
+        //$this->userdataRepository->updateRows();
+        //$this->userdataRepository->addRows();
+        //$this->userdataRepository->reportNotChangedRows();
     }
 }
