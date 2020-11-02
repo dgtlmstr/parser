@@ -68,6 +68,10 @@ class ParseUserdata extends Command
             case Parser::PARSER_FAILED:
                 $this->line(date('[H:i:s] ') . "Update failed. Parsing failed");
                 break;
+
+            case Parser::PARSER_ABOVE_THRESHOLD:
+                $this->line(date('[H:i:s] ') . "Update stopped. Update entry count is above threshold");
+                break;
         }
         return 0;
     }

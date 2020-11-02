@@ -4,11 +4,11 @@ namespace App\Services;
 use App\DTO\UpdateSummaryDTO;
 use App\DTO\UserdataDTO;
 use App\Repositories\UserdataRepository;
-use Illuminate\Contracts\Validation\Validator;
+use Validator;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class FeedManager {
+class Parser {
 
     /**
      * Constant representing the name of the table where parser temporary data is stored.
@@ -19,6 +19,12 @@ class FeedManager {
      * Constant representing the count of records to be inserted to the temporary table at once.
      */
     public const BULK_INSERT_LIMIT = 1000;
+
+    /**
+     * Constant representing the threshold.
+     * It requires special parameter {paramname} to be used to apply mass update.
+     */
+    public const UPDATE_THRESHOLD_LIMIT = 1000;
 
     /**
      * Constant representing a successfully updated user data.
@@ -34,6 +40,11 @@ class FeedManager {
      * Constant representing update failure due to parsing error.
      */
     public const PARSER_FAILED = 3;
+
+    /**
+     * Constant representing update stop due to above threshold delete.
+     */
+    public const PARSER_ABOVE_THRESHOLD = 4;
 
     /**
      * The instance of the Filer class.
@@ -64,15 +75,25 @@ class FeedManager {
     private $entriesBuffer;
 
     /**
+     * The Csv Parser instance.
+     *
+     * @var CsvParser
+     */
+    private $csvParser;
+
+    /**
      * Create a new Parser instance.
      *
      * @param Filer $filer
+     * @param CsvParser $csvParser
      * @param UserdataRepository $userdataRepository
      */
-    public function __construct(Filer $filer, UserdataRepository $userdataRepository){
+    public function __construct(Filer $filer, CsvParser $csvParser, UserdataRepository $userdataRepository){
         $this->filer = $filer;
         $this->filer->setFolder(env("UPDATE_DIR_PATH"));
         $this->filer->setFilename(env("UPDATE_FILENAME"));
+
+        $this->csvParser = $csvParser;
 
         $this->userdataRepository = $userdataRepository;
     }
@@ -96,17 +117,21 @@ class FeedManager {
     public function Update() {
         if (!$this->CheckIfUpdateExists()) return self::PARSER_NO_FILE_UPDATE;
 
-        try {
-            $this->userdataRepository->createTable();
-            $this->parse($this->filer);
+        $this->userdataRepository->createTable();
+        $this->parse($this->filer);
 
-            $this->userdataRepository->calcSummary();
-            $this->userdataRepository->applyUpdate();
-            $this->summary = $this->userdataRepository->getSummary();
-        } catch (\Exception $e) {
-            //Todo: logging
-            return self::PARSER_FAILED;
+        $this->validateUpdate();
+        $this->findDifference();
+        $summary = $this->calcSummary();
+
+        if ($summary->getToDelete() >= self::UPDATE_THRESHOLD_LIMIT ||
+            $summary->getToUpdate() >= self::UPDATE_THRESHOLD_LIMIT) {
+            return self::PARSER_ABOVE_THRESHOLD;
         }
+
+        $this->userdataRepository->applyUpdate();
+
+        $this->summary = $this->userdataRepository->getSummary();
 
         return self::PARSER_OK;
     }
@@ -173,10 +198,10 @@ class FeedManager {
             return $userdata;
         }
 
-        $userdata['customerId'] = $csvEntry[0];
-        $userdata['firstName'] = $csvEntry[1];
-        $userdata['lastName'] = $csvEntry[2];
-        $userdata['cardNumber'] = $csvEntry[3];
+        $userdata['identifier'] = $csvEntry[0];
+        $userdata['first_name'] = $csvEntry[1];
+        $userdata['last_name'] = $csvEntry[2];
+        $userdata['card_number'] = $csvEntry[3];
 
         return $userdata;
     }
@@ -189,13 +214,13 @@ class FeedManager {
      */
     protected function validateEntry($userdata) {
         $validator = Validator::make($userdata, [
-            'customerId' => 'required|integer',
-            'firstName' => 'required|max:30',
-            'lastName' => 'required|max:30',
-            'cardNumber' => 'required|max:16',
+            'identifier' => 'required|numeric',
+            'first_name' => 'required|string|max:30',
+            'last_name' => 'required|string|max:30',
+            'card_number' => 'required|string|max:16',
         ]);
 
-        return $validator->validate();
+        return !$validator->fails();
     }
 
     /**
@@ -218,7 +243,37 @@ class FeedManager {
      * Commit entries to DB
      */
     protected function commitEntries() {
-        DB::table(self::WORK_TABLE_NAME)->insert($this->entriesBuffer);
+        $this->userdataRepository->bulkInsert($this->entriesBuffer);
     }
 
+    /**
+     * Validate:
+     * - identifier uniqueness
+     * - card_number uniqueness
+     * - field uniqueness against data existing in DB
+     */
+    protected function validateUpdate() {
+        $this->userdataRepository->validateIdentifierDuplicates();
+        $this->userdataRepository->validateCardNumberDuplicates();
+        $this->userdataRepository->validateAgainstDb();
+    }
+
+    /**
+     * Mark entries that are different between old and new table
+     */
+    protected function findDifference() {
+        $this->userdataRepository->markEntriesToAdd();
+        $this->userdataRepository->markEntriesToUpdate();
+        $this->userdataRepository->markEntriesToRestore();
+        $this->userdataRepository->markEntriesNotChanged();
+    }
+
+    /**
+     * Return summary on current update.
+     *
+     * @return UpdateSummaryDTO
+     */
+    protected function calcSummary() : UpdateSummaryDTO {
+        return $this->userdataRepository->getSummary();
+    }
 }

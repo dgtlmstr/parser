@@ -14,12 +14,8 @@ class UserdataDTO {
      * @param string $lastName
      * @param string $cardNumber
      */
-    public function __construct(int $customerId, string $firstName, string $lastName, string $cardNumber)
+    public function __construct()
     {
-        $this->customerId = $customerId;
-        $this->firstName = $firstName;
-        $this->lastName = $lastName;
-        $this->cardNumber = $cardNumber;
     }
 
     /**

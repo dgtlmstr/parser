@@ -7,142 +7,46 @@ use App\DTO\UserdataDTO;
 use App\Models\Userdata;
 use App\Services\CsvParser;
 use App\Services\Filer;
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Mockery\Exception;
-use PDO;
+use Illuminate\Support\Facades\Schema;
 
 class UserdataRepository
 {
     /**
-     * The summary stats DTO instance.
-     *
-     * @var UpdateSummaryDTO
+     * The name of the table where parser temporary data is stored.
      */
-    private $summary;
+    public const WORK_TABLE_NAME = 'worktable';
+
+    /**
+     * Constants representing the initial status of row in temporary table.
+     */
+    public const ENTRY_STATUS_UNKNOWN = 0;
+    public const ENTRY_STATUS_ID_DUPLICATE = 1;
+    public const ENTRY_STATUS_CARDNUMBER_DUPLICATE = 2;
+    public const ENTRY_STATUS_DB_DUPLICATE = 3;
+    public const ENTRY_STATUS_TO_ADD = 4;
+    public const ENTRY_STATUS_TO_UPDATE = 5;
+    public const ENTRY_STATUS_TO_RESTORE = 6;
+    public const ENTRY_STATUS_TO_DELETE = 7;
+    public const ENTRY_STATUS_NOT_CHANGED = 8;
 
     /**
      * The Userdata entity instance.
      *
      * @var Userdata
      */
-
     private $model;
-    /**
-     * The Csv Parser instance.
-     *
-     * @var CsvParser
-     */
-    private $csvParser;
 
 
     /**
      * Create a new Userdata Repository instance.
      *
      * @param Userdata $model
-     * @param UpdateSummaryDTO $summary
      */
-    public function __construct(Userdata $model, UpdateSummaryDTO $summary, CsvParser $csvParser){
+    public function __construct(Userdata $model){
         $this->model = $model;
-        $this->summary = $summary;
-        $this->csvParser = $csvParser;
-    }
-
-    /**
-     * Upload user data from a .csv file to userdata service table.
-     * Todo: get warnings/errors info from MySQL and trigger exception on parsing errors/warnings.
-     *
-     * @param Filer $filer
-     *
-     * @throws \Exception
-     * @deprecated
-     */
-    public function uploadUpdateLoadInfile(Filer $filer) {
-        $filePath = $filer->getFilePath();
-
-        // works ok
-        $pdo = DB::connection()->getpdo();
-        $pdo->exec(
-            "LOAD DATA LOCAL INFILE '$filePath'
-            INTO TABLE userdata
-            FIELDS TERMINATED BY '\\t'
-            LINES TERMINATED BY '\\n'
-            IGNORE 1 LINES
-            (customer_id, first_name, last_name, card_number)"
-        );
-
-        // doesn't work
-        /*$pdo = DB::connection()->getpdo();
-        $statement = $pdo->prepare(
-            "LOAD DATA LOCAL INFILE '?'
-            INTO TABLE userdata
-            FIELDS TERMINATED BY '\\t'
-            LINES TERMINATED BY '\\n'
-            IGNORE 1 LINES
-            (customer_id, first_name, last_name, card_number)"
-        );
-        $statement->execute([$filePath]);
-        unset($statement);*/
-
-        //Todo: handle warning count and trigger exception on errors/warnings
-        //$warningCount = DB::select(DB::raw('SELECT @@warning_count'));
-        $statement = $pdo->prepare('SHOW COUNT(*) WARNINGS', [PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => false]);
-        $statement->execute();
-        $x = $statement->fetchAll();
-    }
-
-    /**
-     * Upload user data from a .csv file to userdata service table.
-     * Todo: get warnings/errors info from MySQL and trigger exception on parsing errors/warnings.
-     *
-     * @param Filer $filer
-     *
-     * @throws \Exception
-     */
-    public function uploadUpdate(Filer $filer) {
-        if ($filer->isFileEmpty()) {
-            throw new \Exception('Empty file');
-        }
-
-        $callback = [$this, "addRowCallback"];
-        $this->csvParser->parse($filer, $callback);
-    }
-
-    /**
-     * Clear userdata table before using.
-     */
-    public function prepare() {
-        DB::table($this->model->getTable())->truncate();
-    }
-
-    /**
-     * Validate user data and gather reject summary:
-     * - reject rows with empty name and last name or empty card
-     * - reject id duplicates
-     * - reject card number duplicates
-     * - reject rows where card numbers already belong to other customers
-     */
-    public function validate() {
-        $this->summary->incrementRejectedEntries($this->getRejectedEmptyValuesCount());
-        $this->rejectEmptyValues();
-
-        $this->summary->incrementRejectedEntries($this->getRejectedIdDuplicatesCount());
-        $this->rejectIdDuplicates();
-
-        $this->summary->incrementRejectedEntries($this->getRejectedCardNumberDuplicatesCount());
-        $this->rejectCardNumberDuplicates();
-
-        $this->summary->incrementRejectedEntries($this->getRejectedCardNumberReservedCount());
-        $this->rejectCardNumberReserved();
-    }
-
-    /**
-     * Calculate update statistics to store in the $summary.
-     */
-    public function calcSummary() {
-        $this->summary->setNewEntries($this->getNewCount());
-        $this->summary->setDeletedEntries($this->getDeletedCount());
-        $this->summary->setRestoredEntries($this->getRestoredCount());
-        $this->summary->setUpdatedEntries($this->getUpdatedCount());
     }
 
     /**
@@ -160,180 +64,6 @@ class UserdataRepository
         $this->addOrUpdateOrRestoreEntries();
 
         //DB::commit();
-    }
-
-    /**
-     * Return parser update process statistics.
-     *
-     * @return UpdateSummaryDTO
-     */
-    public function getSummary() {
-        return $this->summary;
-    }
-
-    /**
-     * Return the number of entries rejected because of empty name and last name or empty card number.
-     *
-     * @return int
-     */
-    protected function getRejectedEmptyValuesCount() {
-        $result = DB::selectOne(DB::raw(
-            "SELECT COUNT(*) num FROM userdata
-            WHERE (first_name = '' AND last_name = '') OR card_number = ''"
-        ));
-
-        return empty($result) ? 0 : $result->num;
-    }
-
-    /**
-     * Remove (from service userdata table) entries rejected because of empty name and last name or empty card number
-     */
-    protected function rejectEmptyValues()
-    {
-        DB::statement(
-            "DELETE FROM userdata
-            WHERE (first_name = '' AND last_name = '') OR card_number = ''"
-        );
-    }
-
-    /**
-     * Return the number of entries rejected because of id duplicates.
-     *
-     * @return int
-     */
-    protected function getRejectedIdDuplicatesCount() {
-        $result = DB::selectOne(DB::raw(
-            "SELECT COUNT(*) num FROM userdata
-            GROUP BY customer_id
-            HAVING COUNT(*) > 1"
-        ));
-
-        return empty($result) ? 0 : $result->num;
-    }
-
-    /**
-     * Remove (from service userdata table) entries rejected because of id duplicates.
-     */
-    protected function rejectIdDuplicates()
-    {
-        DB::statement(
-            "DELETE u1 FROM userdata u1
-            INNER JOIN userdata u2
-            ON u1.id != u2.id AND u1.customer_id = u2.customer_id"
-        );
-    }
-
-    /**
-     * Return the number of entries rejected because of card number duplicates.
-     *
-     * @return int
-     */
-    protected function getRejectedCardNumberDuplicatesCount() {
-        $result = DB::selectOne(DB::raw(
-            "SELECT COUNT(*) num FROM userdata
-            GROUP BY card_number
-            HAVING COUNT(*) > 1"
-        ));
-
-        return empty($result) ? 0 : $result->num;
-    }
-
-    /**
-     * Remove (from service userdata table) entries rejected because of card number duplicates.
-     */
-    protected function rejectCardNumberDuplicates()
-    {
-        DB::statement(
-            "DELETE u1 FROM userdata u1
-            INNER JOIN userdata u2
-            ON u1.id != u2.id AND u1.card_number = u2.card_number"
-        );
-    }
-
-    /**
-     * Return the number of entries rejected because of card numbers reserved by other customers.
-     *
-     * @return int
-     */
-    protected function getRejectedCardNumberReservedCount() {
-        DB::statement(
-            "UPDATE userdata u SET u.idr =
-            IFNULL((SELECT c.id FROM customers c WHERE c.card_number = u.card_number), 0)"
-        );
-
-        $result = DB::selectOne(DB::raw(
-            "SELECT COUNT(*) num FROM userdata WHERE customer_id != idr AND idr != 0"
-        ));
-
-        return empty($result) ? 0 : $result->num;
-    }
-
-    /**
-     * Remove (from service userdata table) entries rejected because of card numbers reserved by other customers.
-     *
-     * @return int
-     */
-    protected function rejectCardNumberReserved()
-    {
-        DB::statement(
-            "DELETE FROM userdata WHERE customer_id != idr AND idr != 0"
-        );
-    }
-
-    /**
-     * Return the number of new entries to be added to DB.
-     *
-     * @return int
-     */
-    protected function getNewCount() {
-        $result = DB::selectOne(DB::raw(
-            "SELECT COUNT(*) num FROM userdata u WHERE
-            u.customer_id NOT IN (SELECT c.id FROM customers c)"
-        ));
-
-        return empty($result) ? 0 : $result->num;
-    }
-
-    /**
-     * Return the number of entries to be soft deleted from DB.
-     *
-     * @return int
-     */
-    protected function getDeletedCount() {
-        $result = DB::selectOne(DB::raw(
-            "SELECT COUNT(*) num FROM customers c WHERE c.deleted_at IS NULL
-            AND c.id NOT IN (SELECT u.customer_id FROM userdata u)"
-        ));
-
-        return empty($result) ? 0 : $result->num;
-    }
-
-    /**
-     * Return the number of entries to be restored in DB.
-     *
-     * @return int
-     */
-    protected function getRestoredCount() {
-        $result = DB::selectOne(DB::raw(
-            "SELECT COUNT(*) num FROM customers c WHERE c.deleted_at IS NOT NULL
-            AND c.id IN (SELECT u.customer_id FROM userdata u)"
-        ));
-
-        return empty($result) ? 0 : $result->num;
-    }
-
-    /**
-     * Return number of records to be updated in DB.
-     *
-     * @return int
-     */
-    protected function getUpdatedCount() {
-        $result = DB::selectOne(DB::raw(
-            "SELECT COUNT(*) num FROM customers c WHERE c.deleted_at IS NULL
-            AND c.id IN (SELECT u.customer_id FROM userdata u)"
-        ));
-
-        return empty($result) ? 0 : $result->num;
     }
 
     /**
@@ -360,34 +90,216 @@ class UserdataRepository
     }
 
     /**
-     * Method to be passed as a callbback to CSV parser.
-     * Adding new entry to userdata.
-     * Expect array [integer (customer_id), string (first_name), string (last_name), string (card_number)] as an input parameter.
-     *
-     * @param array $row
-     */
-    public function addRowCallback(array $row) {
-        if (count($row) != 4) {
-            throw new \Exception('CSV parsing error');
-        }
-
-        if ((string)(int)$row[0] != $row[0] ||
-            strlen($row[1]) > 255 ||
-            strlen($row[2]) > 255 ||
-            strlen($row[3]) > 255) {
-
-            throw new \Exception('CSV parsing error');
-        }
-
-        $this->addRow(new UserdataDTO($row[0], $row[1], $row[2], $row[3]));
-    }
-
-    /**
      * Adding new row to the userdata table
      *
      * @param UserdataDTO $userdata
      */
-    public function addRow(UserdataDTO $userdata) {
+    /*public function addRow(UserdataDTO $userdata) {
         DB::insert("INSERT INTO userdata(customer_id, first_name, last_name, card_number) values(?, ?, ?, ?)", $userdata->toArray());
+    }*/
+
+    /**
+     * Recreate work table.
+     * @todo create custom table based on config
+     */
+    public function createTable() {
+        Schema::dropIfExists(self::WORK_TABLE_NAME);
+
+        Schema::create(self::WORK_TABLE_NAME, function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('identifier')->default(0);
+            $table->string('first_name', 30);
+            $table->string('last_name', 30);
+            $table->string('card_number');
+            $table->integer('status_id')->default(self::ENTRY_STATUS_UNKNOWN);
+            $table->unsignedBigInteger('idr')->default(0);
+            $table->index(['identifier']);
+            $table->index(['card_number']);
+            $table->index(['idr']);
+            $table->index(['status_id']);
+        });
+    }
+
+    /**
+     * Bulk insert a number of rows.
+     *
+     * @param $rows
+     */
+    public function bulkInsert($rows) {
+        DB::table(self::WORK_TABLE_NAME)->insert($rows);
+    }
+
+    /**
+     * Mark identifier duplicates.
+     */
+    public function validateIdentifierDuplicates() {
+        DB::table(self::WORK_TABLE_NAME .' as u1')
+            ->join(self::WORK_TABLE_NAME .' as u2', 'u1.identifier', '=', 'u2.identifier')
+            ->where([
+                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+                ['u2.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+            ])
+            ->whereRaw('u1.id <> u2.id')
+            ->update(['u1.status_id' => self::ENTRY_STATUS_ID_DUPLICATE]);
+    }
+
+    /**
+     * Mark card number duplicates.
+     */
+    public function validateCardNumberDuplicates() {
+        DB::table(self::WORK_TABLE_NAME .' as u1')
+            ->join(self::WORK_TABLE_NAME .' as u2', 'u1.card_number', '=', 'u2.card_number')
+            ->where([
+                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+                ['u2.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+            ])
+            ->whereRaw('u1.id <> u2.id')
+            ->update(['u1.status_id' => self::ENTRY_STATUS_CARDNUMBER_DUPLICATE]);
+    }
+
+
+    /**
+     * Mark entries whose card numbers has already been taken by others.
+     */
+    public function validateAgainstDb() {
+        // we'd maybe better go with subquery
+        DB::table(self::WORK_TABLE_NAME .' as u1')
+            ->join('customers' .' as u2', 'u1.card_number', '=', 'u2.card_number')
+            ->where([
+                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+            ])
+            ->whereRaw('u1.identifier <> u2.id AND u2.deleted_at IS NULL')
+            ->update(['u1.status_id' => self::ENTRY_STATUS_DB_DUPLICATE]);
+    }
+
+    /**
+     * Mark entries to be added to DB.
+     */
+    public function markEntriesToAdd() {
+        // we'd maybe better go with subquery
+        DB::table(self::WORK_TABLE_NAME .' as u1')
+            ->leftJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
+            ->where([
+                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+            ])
+            ->whereRaw('u2.id IS NULL')
+            ->update(['u1.status_id' => self::ENTRY_STATUS_TO_ADD]);
+    }
+
+    /**
+     * Mark entries to be added to DB.
+     */
+    public function markEntriesToUpdate() {
+        // we'd maybe better go with subquery
+        DB::table(self::WORK_TABLE_NAME .' as u1')
+            ->leftJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
+            ->where([
+                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+            ])
+            ->whereRaw(
+                'u2.id IS NOT NULL
+                AND u2.deleted_at IS NULL
+                AND (u1.first_name <> u2.first_name OR u1.last_name <> u2.last_name OR u1.card_number <> u2.card_number)'
+            )
+            ->update(['u1.status_id' => self::ENTRY_STATUS_TO_UPDATE]);
+    }
+
+    /**
+     * Mark entries to do not touch.
+     * Must be called as a final method in validation chain!
+     */
+    public function markEntriesNotChanged() {
+        DB::table(self::WORK_TABLE_NAME .' as u1')
+            ->where([
+                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+            ])
+            ->update(['u1.status_id' => self::ENTRY_STATUS_NOT_CHANGED]);
+
+        // check all fields approach
+        /*DB::table(self::WORK_TABLE_NAME .' as u1')
+            ->leftJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
+            ->where([
+                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+            ])
+            ->whereRaw('u2.id IS NOT NULL AND (u1.first_name = u2.first_name AND u1.last_name = u2.last_name AND u1.card_number = u2.card_number)')
+            ->update(['u1.status_id' => self::ENTRY_STATUS_NOT_CHANGED]);*/
+    }
+
+    /**
+     * Mark entries to be restored to DB.
+     */
+    public function markEntriesToRestore() {
+        // we'd maybe better go with subquery
+        DB::table(self::WORK_TABLE_NAME .' as u1')
+            ->leftJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
+            ->where([
+                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+            ])
+            ->whereRaw('u2.deleted_at IS NOT NULL')
+            ->update(['u1.status_id' => self::ENTRY_STATUS_TO_RESTORE]);
+    }
+
+    /**
+     * Count entries to be deleted in DB.
+     */
+    public function countEntriesToDelete() {
+        // we'd maybe better go with subquery
+        $result = DB::table(self::WORK_TABLE_NAME .' as u1')
+            ->rightJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
+            ->whereRaw('u2.deleted_at IS NULL AND u1.id IS NULL')
+            ->selectRaw('COUNT(*) AS total')
+            ->first();
+
+        return $result->total;
+    }
+
+    /**
+     * Return validate and update summary.
+     *
+     * @return UpdateSummaryDTO
+     */
+    public function getSummary() {
+        $summary = new UpdateSummaryDTO();
+
+        $result = DB::table(self::WORK_TABLE_NAME .' as u1')
+            ->select('status_id', DB::raw('count(*) as total'))
+            ->groupBy('status_id')
+            ->get();
+
+        foreach ($result as $row) {
+            switch ($row->status_id) {
+                case self::ENTRY_STATUS_ID_DUPLICATE:
+                    $summary->setIdDuplicate($row->total);
+                    break;
+
+                case self::ENTRY_STATUS_CARDNUMBER_DUPLICATE:
+                    $summary->setCardNumberDuplicate($row->total);
+                    break;
+
+                case self::ENTRY_STATUS_DB_DUPLICATE:
+                    $summary->setDbDuplicate($row->total);
+                    break;
+
+                case self::ENTRY_STATUS_TO_ADD:
+                    $summary->setToAdd($row->total);
+                    break;
+
+                case self::ENTRY_STATUS_TO_UPDATE:
+                    $summary->setToUpdate($row->total);
+                    break;
+
+                case self::ENTRY_STATUS_TO_RESTORE:
+                    $summary->setToRestore($row->total);
+                    break;
+
+                case self::ENTRY_STATUS_NOT_CHANGED:
+                    $summary->setNotChanged($row->total);
+                    break;
+            }
+        }
+
+        $summary->setToDelete($this->countEntriesToDelete());
+
+        return $summary;
     }
 }

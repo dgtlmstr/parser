@@ -6,11 +6,14 @@ namespace App\DTO;
 
 class UpdateSummaryDTO
 {
-    private $newEntries = 0;
-    private $updatedEntries = 0;
-    private $deletedEntries = 0;
-    private $restoredEntries = 0;
-    private $rejectedEntries = 0;
+    private $idDuplicate = 0;
+    private $cardNumberDuplicate = 0;
+    private $dbDuplicate = 0;
+    private $toAdd = 0;
+    private $toUpdate = 0;
+    private $toRestore = 0;
+    private $toDelete = 0;
+    private $notChanged = 0;
 
     /**
      * UpdateStatsDTO constructor.
@@ -21,84 +24,129 @@ class UpdateSummaryDTO
     /**
      * @return int
      */
-    public function getNewEntries(): int
+    public function getIdDuplicate(): int
     {
-        return $this->newEntries;
+        return $this->idDuplicate;
     }
 
     /**
-     * @param int $newEntries
+     * @param int $idDuplicate
      */
-    public function setNewEntries(int $newEntries): void
+    public function setIdDuplicate(int $idDuplicate): void
     {
-        $this->newEntries = $newEntries;
-    }
-
-    /**
-     * @return int
-     */
-    public function getUpdatedEntries(): int
-    {
-        return $this->updatedEntries;
-    }
-
-    /**
-     * @param int $updatedEntries
-     */
-    public function setUpdatedEntries(int $updatedEntries): void
-    {
-        $this->updatedEntries = $updatedEntries;
+        $this->idDuplicate = $idDuplicate;
     }
 
     /**
      * @return int
      */
-    public function getDeletedEntries(): int
+    public function getCardNumberDuplicate(): int
     {
-        return $this->deletedEntries;
+        return $this->cardNumberDuplicate;
     }
 
     /**
-     * @param int $deletedEntries
+     * @param int $cardNumberDuplicate
      */
-    public function setDeletedEntries(int $deletedEntries): void
+    public function setCardNumberDuplicate(int $cardNumberDuplicate): void
     {
-        $this->deletedEntries = $deletedEntries;
-    }
-
-    /**
-     * @return int
-     */
-    public function getRestoredEntries(): int
-    {
-        return $this->restoredEntries;
-    }
-
-    /**
-     * @param int $restoredEntries
-     */
-    public function setRestoredEntries(int $restoredEntries): void
-    {
-        $this->restoredEntries = $restoredEntries;
+        $this->cardNumberDuplicate = $cardNumberDuplicate;
     }
 
     /**
      * @return int
      */
-    public function getRejectedEntries(): int
+    public function getDbDuplicate(): int
     {
-        return $this->rejectedEntries;
+        return $this->dbDuplicate;
     }
 
     /**
-     * @param int $rejectedEntries
+     * @param int $dbDuplicate
      */
-    public function setRejectedEntries(int $rejectedEntries): void
+    public function setDbDuplicate(int $dbDuplicate): void
     {
-        $this->rejectedEntries = $rejectedEntries;
+        $this->dbDuplicate = $dbDuplicate;
     }
 
-    public function incrementRejectedEntries(int $rejectedEntries) : void {
-        $this->rejectedEntries += $rejectedEntries;
+    /**
+     * @return int
+     */
+    public function getToAdd(): int
+    {
+        return $this->toAdd;
     }
+
+    /**
+     * @param int $toAdd
+     */
+    public function setToAdd(int $toAdd): void
+    {
+        $this->toAdd = $toAdd;
+    }
+
+    /**
+     * @return int
+     */
+    public function getToUpdate(): int
+    {
+        return $this->toUpdate;
+    }
+
+    /**
+     * @param int $toUpdate
+     */
+    public function setToUpdate(int $toUpdate): void
+    {
+        $this->toUpdate = $toUpdate;
+    }
+
+    /**
+     * @return int
+     */
+    public function getToRestore(): int
+    {
+        return $this->toRestore;
+    }
+
+    /**
+     * @param int $toRestore
+     */
+    public function setToRestore(int $toRestore): void
+    {
+        $this->toRestore = $toRestore;
+    }
+
+    /**
+     * @return int
+     */
+    public function getNotChanged(): int
+    {
+        return $this->notChanged;
+    }
+
+    /**
+     * @param int $notChanged
+     */
+    public function setNotChanged(int $notChanged): void
+    {
+        $this->notChanged = $notChanged;
+    }
+
+    /**
+     * @return int
+     */
+    public function getToDelete(): int
+    {
+        return $this->toDelete;
+    }
+
+    /**
+     * @param int $toDelete
+     */
+    public function setToDelete(int $toDelete): void
+    {
+        $this->toDelete = $toDelete;
+    }
+
 }

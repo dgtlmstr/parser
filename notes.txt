@@ -1,0 +1,54 @@
+- Config as an interface that implements the relevant mappings and staff
+
++ Get a file
++ Start reading
+
+For each row  :
+============
+
++ Map the row to expected format
++ Validate that the row is passing validation rules.
++ Enter the mapped row to temporary table. (tables should be created dynamically based on school?)
++ We should do bulk insert (collect 1k and then insert all together)
+
+In database
+===========
+
+
+Validate identifier uniqueness, if identifier is not unique, mark both rows as duplicates
+Validate all other unique fields mark as duplicates non unique
+Validate unique fields against existing in the db, mark as duplicate non unique
+
+find rows that are different between new and old table
+Mark rows to add
+Mark rows to update
+Mark rows do not touch
+Mark rows restore -
+
+Count expected update numbers
+Count expected delete number using query
+
+If below trashhold
+
+//not sure if we want to do it as part of one transaction
+
+Apply
+=====
+
+delete rows
+get rows that can not be deleted and add them to can_not delete (based on roles)
+get rows that can  be deleted (maybe do it with cursor)
+For each row to delete
+	delet,add to report file, throw Event
+For each row to Restore
+	restore, add to report file, throw event.
+For each row to update (use cursor){
+    update, add to report, throw event (now just a stab)
+}
+For each row to add (use cursor){
+    //We can do bulk add here, but if we fail we will have to do it one by one.
+    add, add to report, throw event (now just a stab)
+}
+For each row that was not tocuhed (use cursor){
+    add to report
+}
