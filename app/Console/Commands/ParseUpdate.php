@@ -4,8 +4,10 @@ namespace App\Console\Commands;
 
 use App\Services\Parser;
 use Illuminate\Console\Command;
+use Mockery\Exception;
+use Psy\Exception\FatalErrorException;
 
-class ParseUserdata extends Command
+class ParseUpdate extends Command
 {
     /**
      * The name and signature of the console command.
@@ -46,27 +48,13 @@ class ParseUserdata extends Command
      */
     public function handle()
     {
-        $result = $this->parser->Update();
-
-        switch ($result) {
-            case Parser::PARSER_OK:
-                $stats = $this->parser->getSummary();
-                $this->line(date('[H:i:s] ') . "Update ok");
-                $this->parser->DeleteUpdate();
-                break;
-
-            case Parser::PARSER_NO_FILE_UPDATE:
-                $this->line(date('[H:i:s] ') . "Update failed. File not found");
-                break;
-
-            case Parser::PARSER_FAILED:
-                $this->line(date('[H:i:s] ') . "Update failed. Parsing failed");
-                break;
-
-            case Parser::PARSER_ABOVE_THRESHOLD:
-                $this->line(date('[H:i:s] ') . "Update stopped. Update entry count is above threshold");
-                break;
+        try {
+            $result = $this->parser->processFeed(); //+report info, ?report summary
+            $this->line(date('[H:i:s] ') . "Update ok");
+        } catch (Exception $exception) { // change exception
+            $this->line(date('[H:i:s] ') . "Update error");
         }
+
         return 0;
     }
 }

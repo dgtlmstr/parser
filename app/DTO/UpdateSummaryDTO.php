@@ -16,12 +16,6 @@ class UpdateSummaryDTO
     private $notChanged = 0;
 
     /**
-     * UpdateStatsDTO constructor.
-     */
-    public function __construct() {
-    }
-
-    /**
      * @return int
      */
     public function getIdDuplicate(): int

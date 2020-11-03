@@ -3,16 +3,22 @@
 namespace App\Repositories;
 
 use App\DTO\UpdateSummaryDTO;
-use App\DTO\UserdataDTO;
-use App\Models\Userdata;
-use App\Services\CsvParser;
+use App\DTO\UserDataDTO;
+use App\Events\DeleteCustomer;
+use App\Models\UserData;
+use App\Services\CsvReader;
 use App\Services\Filer;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-class UserdataRepository
+/**
+ * Allow to work with entry temporary table
+ *
+ * @package App\Repositories
+ */
+class UserDataRepository
 {
     /**
      * The name of the table where parser temporary data is stored.
@@ -23,19 +29,20 @@ class UserdataRepository
      * Constants representing the initial status of row in temporary table.
      */
     public const ENTRY_STATUS_UNKNOWN = 0;
-    public const ENTRY_STATUS_ID_DUPLICATE = 1;
-    public const ENTRY_STATUS_CARDNUMBER_DUPLICATE = 2;
-    public const ENTRY_STATUS_DB_DUPLICATE = 3;
-    public const ENTRY_STATUS_TO_ADD = 4;
-    public const ENTRY_STATUS_TO_UPDATE = 5;
-    public const ENTRY_STATUS_TO_RESTORE = 6;
-    public const ENTRY_STATUS_TO_DELETE = 7;
-    public const ENTRY_STATUS_NOT_CHANGED = 8;
+    public const ENTRY_STATUS_PARSE_ERROR = 1;
+    public const ENTRY_STATUS_ID_DUPLICATE = 2;
+    public const ENTRY_STATUS_CARDNUMBER_DUPLICATE = 3;
+    public const ENTRY_STATUS_DB_DUPLICATE = 4;
+    public const ENTRY_STATUS_TO_ADD = 5;
+    public const ENTRY_STATUS_TO_UPDATE = 6;
+    public const ENTRY_STATUS_TO_RESTORE = 7;
+    public const ENTRY_STATUS_TO_DELETE = 8;
+    public const ENTRY_STATUS_NOT_CHANGED = 9;
 
     /**
      * The Userdata entity instance.
      *
-     * @var Userdata
+     * @var UserData
      */
     private $model;
 
@@ -50,10 +57,10 @@ class UserdataRepository
     /**
      * Create a new Userdata Repository instance.
      *
-     * @param Userdata $model
+     * @param UserData $model
      * @param CustomerRepository $customerRepository
      */
-    public function __construct(Userdata $model, CustomerRepository $customerRepository){
+    public function __construct(UserData $model, CustomerRepository $customerRepository){
         $this->model = $model;
         $this->customerRepository = $customerRepository;
     }
@@ -101,7 +108,7 @@ class UserdataRepository
     /**
      * Adding new row to the userdata table
      *
-     * @param UserdataDTO $userdata
+     * @param UserDataDTO $userdata
      */
     /*public function addRow(UserdataDTO $userdata) {
         DB::insert("INSERT INTO userdata(customer_id, first_name, last_name, card_number) values(?, ?, ?, ?)", $userdata->toArray());
@@ -111,7 +118,7 @@ class UserdataRepository
      * Recreate work table.
      * @todo create custom table based on config
      */
-    public function createTable() {
+    public function createTemporaryTable() {
         Schema::dropIfExists(self::WORK_TABLE_NAME);
 
         Schema::create(self::WORK_TABLE_NAME, function (Blueprint $table) {
@@ -132,18 +139,18 @@ class UserdataRepository
      *
      * @param $rows
      */
-    public function bulkInsert($rows) {
-        DB::table(self::WORK_TABLE_NAME)->insert($rows);
+    public function bulkInsert($rows) { //work_table_name -> model->getTable
+        DB::table(self::WORK_TABLE_NAME)->insert($rows); //performance (compare with one-by-one)
     }
 
     /**
      * Mark identifier duplicates.
      */
-    public function validateIdentifierDuplicates() {
+    public function validateIdentifierDuplicates() { // who is whose duplicate!
         DB::table(self::WORK_TABLE_NAME .' as u1')
             ->join(self::WORK_TABLE_NAME .' as u2', 'u1.identifier', '=', 'u2.identifier')
             ->where([
-                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN], // AND NOT _REJECTED
                 ['u2.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
             ])
             ->whereRaw('u1.id <> u2.id')
@@ -151,9 +158,10 @@ class UserdataRepository
     }
 
     /**
-     * Mark card number duplicates.
+     * Mark card number duplicates in DB tmp table.
+     * Describe if complex structure is used to store status.
      */
-    public function validateCardNumberDuplicates() {
+    public function validateCardNumberDuplicates() { // do update however is called validate
         DB::table(self::WORK_TABLE_NAME .' as u1')
             ->join(self::WORK_TABLE_NAME .' as u2', 'u1.card_number', '=', 'u2.card_number')
             ->where([
@@ -168,7 +176,7 @@ class UserdataRepository
     /**
      * Mark entries whose card numbers has already been taken by others.
      */
-    public function validateAgainstDb() {
+    public function validateAgainstDb() { // validate what exactly? + what is dup id
         // we'd maybe better go with subquery
         DB::table(self::WORK_TABLE_NAME .' as u1')
             ->join('customers' .' as u2', 'u1.card_number', '=', 'u2.card_number')
@@ -222,7 +230,8 @@ class UserdataRepository
             ])
             ->update(['u1.status_id' => self::ENTRY_STATUS_NOT_CHANGED]);
 
-        // check all fields approach
+        // check all fields approach - this one is better!
+        // hardcode fields - to config (configs as set of classes based on base class)
         /*DB::table(self::WORK_TABLE_NAME .' as u1')
             ->leftJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
             ->where([
@@ -266,7 +275,7 @@ class UserdataRepository
      *
      * @todo Put all rows that can't be deleted to can_not delete list.
      */
-    public function deleteRows() {
+    public function deleteRows() { // add exception on each row + report on exception
         $cursor = DB::table(self::WORK_TABLE_NAME .' as u1')
             ->rightJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
             ->whereRaw('u2.deleted_at IS NULL AND u1.id IS NULL')
@@ -274,11 +283,49 @@ class UserdataRepository
             ->cursor();
 
         foreach ($cursor as $row) {
-            $this->customerRepository->deleteRow($row->id);
+            // transaction performance - mass delete vs one-by-one, people+users
+            $customer = $this->customerRepository->deleteRow($row->id);
 
-            //trigger event
+            // check if row can be deleted - on validation, not here
+            event(new DeleteCustomer($customer)); // reporting independently, not in events
         }
     }
+
+    /**
+     * stub
+     */
+    public function restoreRows()
+    {
+        $cursor = null;
+
+        foreach ($cursor as $row) {
+            //$customer = $this->customerRepository->restoreRow($row->id);
+
+            //event(new RestoreCustomer($customer));
+        }
+    }
+
+    /**
+     * stub
+     */
+    public function updateRows()
+    {
+    }
+
+    /**
+     * stub
+     */
+    public function addRows()
+    {
+    }
+
+    /**
+     * stub
+     */
+    public function reportNotChangedRows()
+    {
+    }
+
 
     /**
      * Return validate and update summary.

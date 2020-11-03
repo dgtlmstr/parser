@@ -27,11 +27,12 @@ class CustomerRepository
      * Soft delete row by id.
      *
      * @param $id
+     * @return mixed
      */
     public function deleteRow($id)
     {
-        DB::table($this->customer->getTable())
-            ->where('id', $id)
-            ->update(['deleted_at' => DB::raw('NOW()')]);
+        $customer = Customer::find($id);
+        $customer->delete();
+        return $customer;
     }
 }

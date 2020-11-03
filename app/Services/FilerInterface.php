@@ -23,7 +23,7 @@ interface FilerInterface
      *
      * @return string
      */
-    public function getFilePath(): string;
+    public function getFullFileName(): string;
 
     /**
      * Check if file exists.

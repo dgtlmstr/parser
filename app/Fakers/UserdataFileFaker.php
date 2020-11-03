@@ -12,7 +12,7 @@ class UserdataFileFaker implements FilerInterface
     public function setFolder($folder) {
     }
 
-    public function getFilePath(): string {
+    public function getFullFileName(): string {
         return './';
     }
 

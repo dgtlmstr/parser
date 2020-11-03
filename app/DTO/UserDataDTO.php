@@ -1,22 +1,16 @@
 <?php
 namespace App\DTO;
 
-class UserdataDTO {
+/**
+ * Data Transfer Object to store entry
+ *
+ * @package App\DTO
+ */
+class UserDataDTO {
     private $customerId = 0;
     private $firstName = "";
     private $lastName = "";
     private $cardNumber = "";
-
-    /**
-     * UserdataDTO constructor.
-     * @param int $customerId
-     * @param string $firstName
-     * @param string $lastName
-     * @param string $cardNumber
-     */
-    public function __construct()
-    {
-    }
 
     /**
      * @return int

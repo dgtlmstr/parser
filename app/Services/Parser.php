@@ -2,18 +2,11 @@
 namespace App\Services;
 
 use App\DTO\UpdateSummaryDTO;
-use App\DTO\UserdataDTO;
-use App\Repositories\UserdataRepository;
+use App\DTO\UserDataDTO;
+use App\Repositories\UserDataRepository;
 use Validator;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 
 class Parser {
-
-    /**
-     * Constant representing the name of the table where parser temporary data is stored.
-     */
-    public const WORK_TABLE_NAME = 'userdata';
 
     /**
      * Constant representing the count of records to be inserted to the temporary table at once.
@@ -27,26 +20,6 @@ class Parser {
     public const UPDATE_THRESHOLD_LIMIT = 1000;
 
     /**
-     * Constant representing a successfully updated user data.
-     */
-    public const PARSER_OK = 1;
-
-    /**
-     * Constant representing update failure due to file absence.
-     */
-    public const PARSER_NO_FILE_UPDATE = 2;
-
-    /**
-     * Constant representing update failure due to parsing error.
-     */
-    public const PARSER_FAILED = 3;
-
-    /**
-     * Constant representing update stop due to above threshold delete.
-     */
-    public const PARSER_ABOVE_THRESHOLD = 4;
-
-    /**
      * The instance of the Filer class.
      *
      * @var Filer
@@ -56,9 +29,9 @@ class Parser {
     /**
      * The instance of the Userdata Repository.
      *
-     * @var UserdataRepository
+     * @var UserDataRepository
      */
-    private $userdataRepository;
+    private $userDataRepository;
 
     /**
      * The summary stats DTO instance
@@ -70,32 +43,32 @@ class Parser {
     /**
      * The Array to buffer entries for bulk insert to the work table.
      *
-     * @var Array
+     * @var array
      */
     private $entriesBuffer;
 
     /**
      * The Csv Parser instance.
      *
-     * @var CsvParser
+     * @var CsvReader
      */
-    private $csvParser;
+    private $csvReader;
 
     /**
      * Create a new Parser instance.
      *
      * @param Filer $filer
-     * @param CsvParser $csvParser
-     * @param UserdataRepository $userdataRepository
+     * @param ReaderInterface $csvParser
+     * @param UserDataRepository $userDataRepository
      */
-    public function __construct(Filer $filer, CsvParser $csvParser, UserdataRepository $userdataRepository){
+    public function __construct(Filer $filer, ReaderInterface $csvParser, UserDataRepository $userDataRepository){
         $this->filer = $filer;
         $this->filer->setFolder(env("UPDATE_DIR_PATH"));
         $this->filer->setFilename(env("UPDATE_FILENAME"));
 
-        $this->csvParser = $csvParser;
+        $this->csvReader = $csvParser;
 
-        $this->userdataRepository = $userdataRepository;
+        $this->userDataRepository = $userDataRepository;
     }
 
     /**
@@ -110,28 +83,46 @@ class Parser {
 
     /**
      * Synchronise user data from external source file with DB.
+     * // extend comment, algorithm
      *
-     * @return int Status of the process
      * @throws \Exception
      */
-    public function Update() {
-        if (!$this->CheckIfUpdateExists()) return self::PARSER_NO_FILE_UPDATE;
+    public function processFeed() {
+        //todo: custom exceptions
+        $this->userDataRepository->createTemporaryTable();
 
-        $this->userdataRepository->createTable();
-        $this->parse($this->filer);
-
-        $this->validateUpdate();
-        $this->findDifference();
-        $this->summary = $this->calcSummary();
-
-        if ($this->summary->getToDelete() >= self::UPDATE_THRESHOLD_LIMIT ||
-            $this->summary->getToUpdate() >= self::UPDATE_THRESHOLD_LIMIT) {
-            return self::PARSER_ABOVE_THRESHOLD;
+        try {
+            $this->validateAndParseCsv($this->filer); // name parsecsvtodb
+        } catch (Exception $exception) { //change exception
+            //todo: report with reporter
+            throw new \Exception("Parse error");
         }
 
-        $this->applyUpdate();
+        try {
+            $this->validateEntries();
+            $this->markEntriesForOperations();
+            $this->calcSummary();
+        } catch (\Exception $exception) {
+            //todo: report with reporter
+            throw new \Exception("Validate error");
+        }
 
-        return self::PARSER_OK;
+        try {
+            $this->validateUpdateBeforeApply();
+        } catch (\Exception $exception) {
+            //todo: report with reporter
+            throw new \Exception("Above threshold");
+        }
+
+        // if 1 record with id not valid - break!
+        // 6 columns but not 3 - is ok
+        // based on fakecall param apply or not
+        try {
+            $this->applyUpdate();
+        } catch (\Exception $exception) {
+            //todo: report with reporter
+            throw new \Exception("Update error");
+        }
     }
 
     /**
@@ -155,18 +146,34 @@ class Parser {
      * Validate each entry.
      * Add entry to DB.
      *
-     * @param Filer $filer
-     *
      * @throws \Exception
      */
-    public function parse(Filer $filer) {
-        if ($filer->isFileEmpty()) {
-            throw new \Exception('Empty file');
+    public function validateAndParseCsv() {
+
+        // get raw iterator
+        if (!$this->CheckIfUpdateExists()) {
+            throw new \Exception("File not found");
         }
 
-        $callback = [$this, "handleEntryCallback"];
-        $this->csvParser->parse($filer, $callback);
-        $this->commitEntries();
+        if ($this->filer->isFileEmpty()) { //filer -> fileservice
+            throw new \Exception('Empty file');
+        }
+        // get raw iterator
+
+        $filePointer = $this->csvReader->getFilePointer($this->filer);
+
+        while ($filePointer->valid()) {
+            $row = $filePointer->current();
+
+            $entry = $this->mapEntry($row);
+            if ($this->validateEntry($entry)) { //save somewhere rejected rows
+                $this->addEntryToDB($entry);
+            }
+            // id not found -> report on validate + add to db with status not valid
+            // check performance (at once to db vs. csv + db + csv)
+
+            $filePointer->next();
+        }
     }
 
     /**
@@ -175,10 +182,11 @@ class Parser {
      * Expect array [integer (customer_id), string (first_name), string (last_name), string (card_number)] as an input parameter.
      *
      * @param array $csvEntry
+     * @deprecated
      */
-    public function handleEntryCallback(array $csvEntry) {
+    public function handleEntryCallback(array $csvEntry) { //extract to class
         $entry = $this->mapEntry($csvEntry);
-        if ($this->validateEntry($entry)) {
+        if ($this->validateEntry($entry)) { //save somewhere rejected rows
             $this->addEntryToDB($entry);
         }
     }
@@ -187,9 +195,10 @@ class Parser {
      * Map raw CSV entry to userdata DTO.
      *
      * @param $csvEntry
-     * @return Array
+     * @return array
      */
     protected function mapEntry($csvEntry) {
+        //todo: mapping based on config
         $userdata = [];
 
         if (count($csvEntry) != 4) {
@@ -210,9 +219,9 @@ class Parser {
      * @param $userdata
      * @return mixed
      */
-    protected function validateEntry($userdata) {
+    protected function validateEntry($userdata) { //performance
         $validator = Validator::make($userdata, [
-            'identifier' => 'required|numeric',
+            'identifier' => 'required|numeric', //find all empty and inform, stop on empty id
             'first_name' => 'required|string|max:30',
             'last_name' => 'required|string|max:30',
             'card_number' => 'required|string|max:16',
@@ -241,7 +250,7 @@ class Parser {
      * Commit entries to DB
      */
     protected function commitEntries() {
-        $this->userdataRepository->bulkInsert($this->entriesBuffer);
+        $this->userDataRepository->bulkInsert($this->entriesBuffer);
     }
 
     /**
@@ -250,40 +259,61 @@ class Parser {
      * - card_number uniqueness
      * - field uniqueness against data existing in DB
      */
-    protected function validateUpdate() {
-        $this->userdataRepository->validateIdentifierDuplicates();
-        $this->userdataRepository->validateCardNumberDuplicates();
-        $this->userdataRepository->validateAgainstDb();
+    protected function validateEntries() { // validate and set status
+        //todo: make calls based on Config
+        $this->userDataRepository->validateIdentifierDuplicates();
+        $this->userDataRepository->validateCardNumberDuplicates();
+        $this->userDataRepository->validateAgainstDb();  //change name
     }
 
     /**
      * Mark entries that are different between old and new table
      */
-    protected function findDifference() {
-        $this->userdataRepository->markEntriesToAdd();
-        $this->userdataRepository->markEntriesToUpdate();
-        $this->userdataRepository->markEntriesToRestore();
-        $this->userdataRepository->markEntriesNotChanged();
+    protected function markEntriesForOperations() {
+        //todo: define entry operations in Config
+        $this->userDataRepository->markEntriesToAdd();
+        $this->userDataRepository->markEntriesToUpdate();
+        $this->userDataRepository->markEntriesToRestore();
+        $this->userDataRepository->markEntriesNotChanged();
     }
 
     /**
-     * Return summary on current update.
-     *
-     * @return UpdateSummaryDTO
+     * Calculate summary on current update.
      */
-    protected function calcSummary() : UpdateSummaryDTO {
-        return $this->userdataRepository->getSummary();
+    protected function calcSummary() {
+        //todo: summary - to its own class
+        $this->summary = $this->userDataRepository->getSummary();
+    }
+
+    /**
+     * Check if number of records to be updated within threshold.
+     * Throws exception if above threshold.
+     *
+     * @throws \Exception
+     */
+    protected function validateUpdateBeforeApply() { //check if update valid
+        //todo: холостая обработка
+        if ($this->summary->getToDelete() >= self::UPDATE_THRESHOLD_LIMIT ||
+            $this->summary->getToUpdate() >= self::UPDATE_THRESHOLD_LIMIT)
+            throw new \Exception("Above threshold");
+        // + report
     }
 
     /**
      * Apply all inserts, updates, deletes and restores.
-     * Trigger events
+     * Trigger events.
      */
-    protected function applyUpdate() {
-        $this->userdataRepository->deleteRows();
-        //$this->userdataRepository->restoreRows();
-        //$this->userdataRepository->updateRows();
-        //$this->userdataRepository->addRows();
-        //$this->userdataRepository->reportNotChangedRows();
+    protected function applyUpdate() { // errors can occur (UNIQUE CONTRAINT or smth)
+        try {
+            $this->userDataRepository->deleteRows(); // exceptions inside
+            $this->userDataRepository->restoreRows();
+            $this->userDataRepository->updateRows();
+            $this->userDataRepository->addRows();
+            $this->userDataRepository->reportNotChangedRows();
+        } catch (\Exception $exception) {
+            //todo: report(summary)
+            $this->calcSummary();
+            // break?
+        }
     }
 }

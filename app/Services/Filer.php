@@ -45,11 +45,11 @@ class Filer implements FilerInterface
     }
 
     /**
-     * Create and return filename with full path basing on pproperties defined.
+     * Create and return filename with full path basing on properties defined.
      *
      * @return string
      */
-    public function getFilePath(): string
+    public function getFullFileName(): string
     {
         return $this->folder . $this->filename;
     }
@@ -60,7 +60,7 @@ class Filer implements FilerInterface
      * @return bool
      */
     public function fileExists() {
-        return File::exists($this->getFilePath());
+        return File::exists($this->getFullFileName());
     }
 
     /**
@@ -76,7 +76,7 @@ class Filer implements FilerInterface
      * @return bool
      */
     public function isFileEmpty() {
-        return File::size($this->getFilePath()) == 0;
+        return File::size($this->getFullFileName()) == 0;
     }
 
     /**
@@ -85,6 +85,24 @@ class Filer implements FilerInterface
      * @return false|resource
      */
     public function getFilePointerForReading() {
-        return fopen($this->getFilePath(), 'r');
+        return fopen($this->getFullFileName(), 'r');
+    }
+
+    /**
+     * Return file pointer to write data to file
+     *
+     * @return false|resource
+     */
+    public function getFilePointerForWriting() {
+        return fopen($this->getFullFileName(), 'w');
+    }
+
+    /**
+     * Return file pointer to write data to file
+     *
+     * @return false|resource
+     */
+    public function getFilePointerForAdding() {
+        return fopen($this->getFullFileName(), 'a');
     }
 }
