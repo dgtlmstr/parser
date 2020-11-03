@@ -1,0 +1,40 @@
+CSV 25K
+
+> php artisan profile:entriestodb "single laravel"
+8.677913 s; 2,787,720 bytes
+> php artisan profile:entriestodb "bulk 1 laravel"
+8.716020 s; 2,787,720 bytes
+> php artisan profile:entriestodb "bulk 10 laravel"
+4.410224 s; 3,429,520 bytes
+> php artisan profile:entriestodb "bulk 100 laravel"
+3.572940 s; 10,071,448 bytes
+> php artisan profile:entriestodb "bulk 1000 laravel"
+3.507536 s; 11,624,128 bytes
+> php artisan profile:entriestodb "bulk 2000 laravel"
+3.524947 s; 11,624,128 bytes
+> php artisan profile:entriestodb "single sql (bind params)"
+8.311669 s; 2,325,968 bytes
+> php artisan profile:entriestodb "bulk 1 sql (bind params)"
+8.105690 s; 2,325,968 bytes
+> php artisan profile:entriestodb "bulk 10 sql (bind params)"
+8.274324 s; 2,325,968 bytes
+> php artisan profile:entriestodb "bulk 10 sql (bind params)"
+4.430116 s; 3,075,504 bytes
+> php artisan profile:entriestodb "bulk 100 sql (bind params)"
+3.613721 s; 9,762,720 bytes
+> php artisan profile:entriestodb "bulk 1000 sql (bind params)"
+3.772424 s; 10,955,240 bytes
+> php artisan profile:entriestodb "bulk 2000 sql (bind params)"
+3.793071 s; 10,955,240 bytes
+> php artisan profile:entriestodb "single sql (raw)"
+7.854370 s; 2,233,912 bytes
+> php artisan profile:entriestodb "bulk 1 sql (raw)"
+7.849817 s; 2,233,912 bytes
+> php artisan profile:entriestodb "bulk 10 sql (raw)"
+4.280187 s; 2,339,624 bytes
+> php artisan profile:entriestodb "bulk 100 sql (raw)"
+3.398391 s; 3,873,768 bytes
+> php artisan profile:entriestodb "bulk 1000 sql (raw)"
+3.401917 s; 4,193,320 bytes
+> php artisan profile:entriestodb "bulk 2000 sql (raw)"
+3.335293 s; 4,193,320 bytes

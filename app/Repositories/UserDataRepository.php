@@ -144,6 +144,67 @@ class UserDataRepository
     }
 
     /**
+     * Insert a single row.
+     *
+     * @param $row
+     */
+    public function singleInsert($row) {
+        DB::table(self::WORK_TABLE_NAME)->insert($row);
+    }
+
+    /**
+     * Insert few rows using SQL with parameter binding.
+     *
+     * @param $rows
+     */
+    public function bulkInsertSql($rows) {
+        $values = [];
+        foreach($rows as $row) {
+            $values = array_merge($values, array_values($row));
+        }
+
+        DB::insert("INSERT INTO " . self::WORK_TABLE_NAME . "(id,identifier,first_name,last_name,card_number,status_id) "
+            . "VALUES ".
+            rtrim(str_repeat("(NULL,?,?,?,?,". self::ENTRY_STATUS_UNKNOWN . "),",count($rows)),","),
+            $values);
+    }
+
+    /**
+     * Insert a single row using SQL with parameter binding.
+     *
+     * @param $row
+     */
+    public function singleInsertSql($row) {
+        DB::insert("INSERT INTO " . self::WORK_TABLE_NAME . "(id,identifier,first_name,last_name,card_number,status_id) "
+            . "VALUES (NULL,?,?,?,?,". self::ENTRY_STATUS_UNKNOWN . ")", array_values($row));
+    }
+
+    /**
+     * Insert few rows using raw SQL.
+     *
+     * @param $rows
+     */
+    public function bulkInsertSqlRaw($rows) {
+        $values = "";
+        foreach ($rows as $row) {
+            $values .= "(NULL,'".addslashes($row['identifier'])."','".addslashes($row['first_name'])."','".addslashes($row['last_name'])."','".addslashes($row['card_number'])."',". self::ENTRY_STATUS_UNKNOWN . "),";
+        }
+
+        DB::statement("INSERT INTO " . self::WORK_TABLE_NAME . "(id,identifier,first_name,last_name,card_number,status_id) "
+            . "VALUES " . rtrim($values, ","));
+    }
+
+    /**
+     * Insert few rows using raw SQL.
+     *
+     * @param $row
+     */
+    public function singleInsertSqlRaw($row) {
+        DB::statement("INSERT INTO " . self::WORK_TABLE_NAME . "(id,identifier,first_name,last_name,card_number,status_id) "
+            . "VALUES (NULL,'".addslashes($row['identifier'])."','".addslashes($row['first_name'])."','".addslashes($row['last_name'])."','".addslashes($row['card_number'])."',". self::ENTRY_STATUS_UNKNOWN . ")");
+    }
+
+    /**
      * Mark identifier duplicates.
      */
     public function validateIdentifierDuplicates() { // who is whose duplicate!

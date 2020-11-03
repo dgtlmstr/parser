@@ -11,7 +11,12 @@ class Parser {
     /**
      * Constant representing the count of records to be inserted to the temporary table at once.
      */
-    public const BULK_INSERT_LIMIT = 1000;
+    public const PARSER_INSERT_MODE = 'bulkSqlRaw';
+
+    /**
+     * Constant representing the count of records to be inserted to the temporary table at once.
+     */
+    public const BULK_INSERT_LIMIT = 2000;
 
     /**
      * Constant representing the threshold.
@@ -89,7 +94,7 @@ class Parser {
      */
     public function processFeed() {
         //todo: custom exceptions
-        $this->userDataRepository->createTemporaryTable();
+        $this->createTemporaryTable();
 
         try {
             $this->validateAndParseCsv($this->filer); // name parsecsvtodb
@@ -174,6 +179,12 @@ class Parser {
 
             $filePointer->next();
         }
+
+        if (self::PARSER_INSERT_MODE == 'bulk' ||
+            self::PARSER_INSERT_MODE == 'bulkSql' ||
+            self::PARSER_INSERT_MODE == 'bulkSqlRaw') {
+            $this->commitEntries();
+        }
     }
 
     /**
@@ -238,7 +249,10 @@ class Parser {
     protected function addEntryToDB($userdata) {
         $this->entriesBuffer[] = $userdata;
 
-        if (count($this->entriesBuffer) == self::BULK_INSERT_LIMIT) {
+        if (self::PARSER_INSERT_MODE == 'single' ||
+            self::PARSER_INSERT_MODE == 'singleSql' ||
+            self::PARSER_INSERT_MODE == 'singleSqlRaw' ||
+            count($this->entriesBuffer) == self::BULK_INSERT_LIMIT) {
             $this->commitEntries();
 
             unset($this->entriesBuffer);
@@ -250,7 +264,21 @@ class Parser {
      * Commit entries to DB
      */
     protected function commitEntries() {
-        $this->userDataRepository->bulkInsert($this->entriesBuffer);
+        if (count($this->entriesBuffer) == 0) return;
+
+        if (self::PARSER_INSERT_MODE == 'bulk') {
+            $this->userDataRepository->bulkInsert($this->entriesBuffer);
+        } else if (self::PARSER_INSERT_MODE == 'single') {
+            $this->userDataRepository->singleInsert($this->entriesBuffer[0]);
+        } else if (self::PARSER_INSERT_MODE == 'bulkSql') {
+            $this->userDataRepository->bulkInsertSql($this->entriesBuffer);
+        } else if (self::PARSER_INSERT_MODE == 'singleSql') {
+            $this->userDataRepository->singleInsertSql($this->entriesBuffer[0]);
+        } else if (self::PARSER_INSERT_MODE == 'bulkSqlRaw') {
+            $this->userDataRepository->bulkInsertSqlRaw($this->entriesBuffer);
+        } else if (self::PARSER_INSERT_MODE == 'singleSqlRaw') {
+            $this->userDataRepository->singleInsertSqlRaw($this->entriesBuffer[0]);
+        }
     }
 
     /**
@@ -315,5 +343,13 @@ class Parser {
             $this->calcSummary();
             // break?
         }
+    }
+
+    /**
+     * Create temporary table to upload entries from CSV.
+     */
+    public function createTemporaryTable()
+    {
+        $this->userDataRepository->createTemporaryTable();
     }
 }
