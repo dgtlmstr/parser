@@ -13,7 +13,7 @@ class CsvReader implements ReaderInterface
 {
     /**
      * Create an instance of CSV Parser
-     * @param Filer $filer
+     * @param FileService $filer
      */
     public function __construct() {
     }
@@ -23,7 +23,7 @@ class CsvReader implements ReaderInterface
      *
      * @throws \Exception
      */
-    public function getFilePointer(Filer $filer) : \Iterator {
+    public function getFilePointer(FileService $filer) : \Iterator {
         if ($filer->isFileEmpty()) {
             throw new \Exception('Empty file');
         }

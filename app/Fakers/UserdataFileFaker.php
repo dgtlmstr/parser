@@ -1,8 +1,8 @@
 <?php
 use App\Services;
-use App\Services\FilerInterface;
+use App\Services\FileServiceInterface;
 
-class UserdataFileFaker implements FilerInterface
+class UserdataFileFaker implements FileServiceInterface
 {
     protected const FILENAME = 'userdata1.csv';
 

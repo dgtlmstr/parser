@@ -6,7 +6,7 @@ use App\Config\UserDataConfig;
 use Faker\Factory as Faker;
 
 /**
- * CSV random file generator
+ * CSV random file generator.
  *
  * @package App\Services
  */
@@ -19,7 +19,7 @@ class CsvFakerGenerator
 
     /**
      * CsvFakerGenerator constructor.
-     * @param Filer $filer
+     * @param FileService $filer
      * @param UserDataConfig $config
      */
     public function __construct(UserDataConfig $config)
@@ -30,10 +30,10 @@ class CsvFakerGenerator
     /**
      * Generate random CSV file on the Config basis.
      *
-     * @param Filer $filer
+     * @param FileService $filer
      * @param $rowNumber
      */
-    public function generateCsv(Filer $filer, $rowNumber) {
+    public function generateCsv(FileService $filer, $rowNumber) {
         //todo: take into account Config
 
         $filePointer = $filer->getFilePointerForWriting();

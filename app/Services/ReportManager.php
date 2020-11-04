@@ -8,20 +8,15 @@ namespace App\Services;
  *
  * @package App\Services
  */
-class Reporter
+class ReportManager
 {
     /**
-     * Constants for report statuses.
+     * @var FileService
      */
-    const REPORT_STATUS_INFO = 1;
+    private $fileService;
 
     /**
-     * @var Filer
-     */
-    private $filer;
-
-    /**
-     * Report file pointer to add information to.
+     * Report file pointer to write information to.
      *
      * @var false|resource
      */
@@ -29,24 +24,33 @@ class Reporter
 
     /**
      * Reporter constructor.
-     * @param Filer $filer
+     * @param FileService $fileService
      */
-    public function __construct(Filer $filer) {
-        $this->filer = $filer;
-        $this->filer->setFolder(env("REPORT_DIR_PATH"));
-        $this->filer->setFilename(env("REPORT_FILENAME"));
+    public function __construct(FileService $fileService) {
+        $this->fileService = $fileService;
+        $this->fileService->setFolder(env("REPORT_DIR_PATH"));
+        $this->fileService->setFilename(env("REPORT_FILENAME"));
 
-        $this->filePointer = $this->filer->getFilePointerForAdding();
+        $this->filePointer = $this->fileService->getFilePointerForAdding();
     }
 
     /**
-     * Add message to report.
+     * Add line to report.
      *
      * @param int $reportStatus
-     * @param string $message
+     * @param string $line
      */
-    public function report(int $reportStatus, string $message) {
-        fwrite($this->filePointer, $message . "\n");
+    public function line(int $reportStatus, string $line) {
+        fwrite($this->filePointer, $line . "\n");
     }
 
+    /**
+     * Add block to report.
+     *
+     * @param int $reportStatus
+     * @param string $block
+     */
+    public function block(int $reportStatus, string $block) {
+        fwrite($this->filePointer, $block);
+    }
 }

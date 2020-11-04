@@ -1,35 +1,46 @@
 <?php
 namespace App\Services;
 
-use App\DTO\UpdateSummaryDTO;
-use App\DTO\UserDataDTO;
 use App\Repositories\UserDataRepository;
 use Validator;
 
+/**
+ * Feed manager allowing to handle and apply CSV update.
+ *
+ * @package App\Services
+ */
 class Parser {
 
     /**
      * Constant representing the count of records to be inserted to the temporary table at once.
      */
-    public const PARSER_INSERT_MODE = 'bulkSqlRaw';
+    public const PARSER_INSERT_MODE = 'bulkSql';
 
     /**
      * Constant representing the count of records to be inserted to the temporary table at once.
      */
-    public const BULK_INSERT_LIMIT = 2000;
+    public const BULK_INSERT_LIMIT = 1000;
 
     /**
      * Constant representing the threshold.
-     * It requires special parameter {paramname} to be used to apply mass update.
+     * @todo It requires special parameter {paramname} to be used to apply mass update.
      */
     public const UPDATE_THRESHOLD_LIMIT = 1000;
 
     /**
+     * Desired mode to run parser in.
+     * Either normal with DB updates or dry with reporting only.
+     *
+     * @var int
+     */
+    protected $runMode = RUN_MODE_NORMAL;
+
+    /**
      * The instance of the Filer class.
      *
-     * @var Filer
+     * @var FileService
      */
-    private $filer;
+    private $fileService;
 
     /**
      * The instance of the Userdata Repository.
@@ -39,9 +50,9 @@ class Parser {
     private $userDataRepository;
 
     /**
-     * The summary stats DTO instance
+     * The Summary instance.
      *
-     * @var UpdateSummaryDTO
+     * @var Summary
      */
     private $summary;
 
@@ -60,20 +71,78 @@ class Parser {
     private $csvReader;
 
     /**
+     * @var ReportManager
+     */
+    private $reportManager;
+
+    /**
      * Create a new Parser instance.
      *
-     * @param Filer $filer
+     * @param FileService $fileService
      * @param ReaderInterface $csvParser
+     * @param ReportManager $reportManager
+     * @param Summary $summary
      * @param UserDataRepository $userDataRepository
      */
-    public function __construct(Filer $filer, ReaderInterface $csvParser, UserDataRepository $userDataRepository){
-        $this->filer = $filer;
-        $this->filer->setFolder(env("UPDATE_DIR_PATH"));
-        $this->filer->setFilename(env("UPDATE_FILENAME"));
+    public function __construct(
+        FileService $fileService,
+        ReaderInterface $csvParser,
+        ReportManager $reportManager,
+        Summary $summary,
+        UserDataRepository $userDataRepository
+    ){
+        $this->fileService = $fileService;
+        $this->fileService->setFolder(env("UPDATE_DIR_PATH"));
+        $this->fileService->setFilename(env("UPDATE_FILENAME"));
 
         $this->csvReader = $csvParser;
-
+        $this->reportManager = $reportManager;
+        $this->summary = $summary;
         $this->userDataRepository = $userDataRepository;
+    }
+
+    /**
+     * Synchronise user data from external source file with DB.
+     *
+     * 1. Create temporary table for entries.
+     * 2. Parse CSV, validate raw data and add entries to the temporary table.
+     * 3. Validate entries in DB (check duplicates, find rows that can't be deleted, etc) - mark invalid rows.
+     * 4. Mark entries for operations.
+     * 5. Calculate summary.
+     * 6. Apply update if it's not a dry run.
+     * 7. Report.
+     *
+     * Return true on successful processing and false in case of failure.
+     *
+     * @return bool
+     * @throws \Exception
+     */
+    public function processFeed() : bool {
+        //todo: custom exceptions
+        $this->createTemporaryTable();
+
+        if (!$this->validateAndParseCsvToDatabase()) {
+            return false;
+        }
+
+        $this->markInvalidEntries();
+        $this->reportInvalidEntries();
+
+        $this->markEntriesForOperations();
+        $this->calcSummary();
+
+        if (!$this->checkIfUpdateCanBeApplied()) {
+            $this->reportSummary();
+            return false;
+        }
+
+        // in dry mode it will report only
+        // should we implement separate method for dry run?
+        $this->applyUpdateWithReporting();
+        $this->calcSummary(); // recalc
+        $this->reportSummary();
+
+        return true;
     }
 
     /**
@@ -83,127 +152,86 @@ class Parser {
      * @return bool
      */
     public function CheckIfUpdateExists() {
-        return $this->filer->fileExists();
-    }
-
-    /**
-     * Synchronise user data from external source file with DB.
-     * // extend comment, algorithm
-     *
-     * @throws \Exception
-     */
-    public function processFeed() {
-        //todo: custom exceptions
-        $this->createTemporaryTable();
-
-        try {
-            $this->validateAndParseCsv($this->filer); // name parsecsvtodb
-        } catch (Exception $exception) { //change exception
-            //todo: report with reporter
-            throw new \Exception("Parse error");
-        }
-
-        try {
-            $this->validateEntries();
-            $this->markEntriesForOperations();
-            $this->calcSummary();
-        } catch (\Exception $exception) {
-            //todo: report with reporter
-            throw new \Exception("Validate error");
-        }
-
-        try {
-            $this->validateUpdateBeforeApply();
-        } catch (\Exception $exception) {
-            //todo: report with reporter
-            throw new \Exception("Above threshold");
-        }
-
-        // if 1 record with id not valid - break!
-        // 6 columns but not 3 - is ok
-        // based on fakecall param apply or not
-        try {
-            $this->applyUpdate();
-        } catch (\Exception $exception) {
-            //todo: report with reporter
-            throw new \Exception("Update error");
-        }
-    }
-
-    /**
-     * Return parser update process statistics.
-     *
-     * @return UpdateSummaryDTO
-     */
-    public function getSummary() : UpdateSummaryDTO {
-        return $this->summary;
+        return $this->fileService->fileExists();
     }
 
     /**
      * Remove user data source file.
      */
     public function DeleteUpdate() {
-        $this->filer->fileRemove();
+        $this->fileService->fileRemove();
     }
 
     /**
-     * Upload user data from a .csv file to userdata service table.
-     * Validate each entry.
-     * Add entry to DB.
+     * Check if CSV okay.
+     * Upload user data from a CSV file to the temporary DB table.
+     * Validate each entry when parsing. Break and report if bad identifier found.
      *
+     * Return true in case of success otherwise false.
+     *
+     * @return bool
      * @throws \Exception
      */
-    public function validateAndParseCsv() {
-
-        // get raw iterator
-        if (!$this->CheckIfUpdateExists()) {
-            throw new \Exception("File not found");
+    public function validateAndParseCsvToDatabase() {
+        $filePointer = $this->getCsvIterator();
+        if (empty($filePointer)) {
+            return false;
         }
 
-        if ($this->filer->isFileEmpty()) { //filer -> fileservice
-            throw new \Exception('Empty file');
-        }
-        // get raw iterator
-
-        $filePointer = $this->csvReader->getFilePointer($this->filer);
-
+        //todo: check if loop can be done in a shorter way (eg, foreach)
         while ($filePointer->valid()) {
             $row = $filePointer->current();
+            if ($row[0] === null) continue;
 
             $entry = $this->mapEntry($row);
-            if ($this->validateEntry($entry)) { //save somewhere rejected rows
-                $this->addEntryToDB($entry);
+
+            if (!$this->validateEntry($entry)) {
+                $entry['status_id'] = ENTRY_STATUS_PARSE_ERROR;
             }
-            // id not found -> report on validate + add to db with status not valid
-            // check performance (at once to db vs. csv + db + csv)
+
+            if (!$this->validateIdentifier($entry['identifier'])) {
+                $this->reportManager->line(REPORT_STATUS_ERROR, "Bad identifier found! Update failed");
+                return false;
+            }
+
+            $this->addEntryToDB($entry);
 
             $filePointer->next();
         }
 
+        // commit the final few rows from buffer when insert mode is bulk
         if (self::PARSER_INSERT_MODE == 'bulk' ||
             self::PARSER_INSERT_MODE == 'bulkSql' ||
             self::PARSER_INSERT_MODE == 'bulkSqlRaw') {
             $this->commitEntries();
         }
+
+        return true;
     }
 
     /**
-     * Method to be passed as a callback to CSV parser.
-     * Adding new entry to userdata.
-     * Expect array [integer (customer_id), string (first_name), string (last_name), string (card_number)] as an input parameter.
+     * Return CSV iterator or null if file not found.
+     * Throws exception when CSV is in bad format (empty).
      *
-     * @param array $csvEntry
-     * @deprecated
+     * @return \Iterator|null
+     * @throws \Exception
      */
-    public function handleEntryCallback(array $csvEntry) { //extract to class
-        $entry = $this->mapEntry($csvEntry);
-        if ($this->validateEntry($entry)) { //save somewhere rejected rows
-            $this->addEntryToDB($entry);
+    public function getCsvIterator() {
+        if (!$this->CheckIfUpdateExists()) {
+            $this->reportManager->line(REPORT_STATUS_ERROR, "Can't find CSV. Nothing to update");
+            return null;
         }
+
+        if ($this->fileService->isFileEmpty()) {
+            $this->reportManager->line(REPORT_STATUS_ERROR, "Bad CSV file! Update failed");
+            return null;
+        }
+
+        return $this->csvReader->getFilePointer($this->fileService);
     }
 
     /**
-     * Map raw CSV entry to userdata DTO.
+     * Map raw CSV entry to user data DTO.
      *
      * @param $csvEntry
      * @return array
@@ -212,14 +240,10 @@ class Parser {
         //todo: mapping based on config
         $userdata = [];
 
-        if (count($csvEntry) != 4) {
-            return $userdata;
-        }
-
         $userdata['identifier'] = $csvEntry[0];
-        $userdata['first_name'] = $csvEntry[1];
-        $userdata['last_name'] = $csvEntry[2];
-        $userdata['card_number'] = $csvEntry[3];
+        $userdata['first_name'] = $csvEntry[1] ?? "";
+        $userdata['last_name'] = $csvEntry[2] ?? "";
+        $userdata['card_number'] = $csvEntry[3] ?? "";
 
         return $userdata;
     }
@@ -287,11 +311,11 @@ class Parser {
      * - card_number uniqueness
      * - field uniqueness against data existing in DB
      */
-    protected function validateEntries() { // validate and set status
+    protected function markInvalidEntries() {
         //todo: make calls based on Config
-        $this->userDataRepository->validateIdentifierDuplicates();
-        $this->userDataRepository->validateCardNumberDuplicates();
-        $this->userDataRepository->validateAgainstDb();  //change name
+        $this->userDataRepository->markIdentifierDuplicates();
+        $this->userDataRepository->markCardNumberDuplicates();
+        $this->userDataRepository->markEntriesWithCardNumbersAlreadyTaken();
     }
 
     /**
@@ -309,40 +333,42 @@ class Parser {
      * Calculate summary on current update.
      */
     protected function calcSummary() {
-        //todo: summary - to its own class
-        $this->summary = $this->userDataRepository->getSummary();
+        $this->summary->setSummary($this->userDataRepository->getSummary());
+        $this->summary->setCountToDelete($this->userDataRepository->countEntriesToDelete());
+        $this->summary->setCountCantDelete($this->userDataRepository->countEntriesCantDelete());
+        $this->summary->setTotalEntries($this->userDataRepository->countTotalEntries());
     }
 
     /**
      * Check if number of records to be updated within threshold.
      * Throws exception if above threshold.
      *
-     * @throws \Exception
+     * @returns bool
      */
-    protected function validateUpdateBeforeApply() { //check if update valid
-        //todo: холостая обработка
-        if ($this->summary->getToDelete() >= self::UPDATE_THRESHOLD_LIMIT ||
-            $this->summary->getToUpdate() >= self::UPDATE_THRESHOLD_LIMIT)
-            throw new \Exception("Above threshold");
-        // + report
+    protected function checkIfUpdateCanBeApplied() : bool {
+        if ($this->summary->getCountToDelete() >= self::UPDATE_THRESHOLD_LIMIT ||
+            $this->summary->getCountToUpdate() >= self::UPDATE_THRESHOLD_LIMIT) {
+
+            $this->reportManager->block(REPORT_STATUS_INFO, $this->summary);
+            $this->reportManager->line(REPORT_STATUS_ERROR, 'Update row count is above threshold! Update failed');
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
      * Apply all inserts, updates, deletes and restores.
      * Trigger events.
+     * If the mode is dry then report ony.
      */
-    protected function applyUpdate() { // errors can occur (UNIQUE CONTRAINT or smth)
-        try {
-            $this->userDataRepository->deleteRows(); // exceptions inside
-            $this->userDataRepository->restoreRows();
-            $this->userDataRepository->updateRows();
-            $this->userDataRepository->addRows();
-            $this->userDataRepository->reportNotChangedRows();
-        } catch (\Exception $exception) {
-            //todo: report(summary)
-            $this->calcSummary();
-            // break?
-        }
+    protected function applyUpdateWithReporting() { // errors can occur (UNIQUE CONTRAINT or smth)
+        $this->userDataRepository->deleteRows();
+        $this->userDataRepository->restoreRows();
+        $this->userDataRepository->updateRows();
+        $this->userDataRepository->addRows();
+        $this->userDataRepository->reportNotChangedRows();
     }
 
     /**
@@ -351,5 +377,46 @@ class Parser {
     public function createTemporaryTable()
     {
         $this->userDataRepository->createTemporaryTable();
+    }
+
+    /**
+     * Set run mode, either normal or dry.
+     *
+     * @param $runMode
+     * @throws \Exception
+     */
+    public function setRunMode($runMode) {
+        if (!in_array($runMode, [RUN_MODE_NORMAL, RUN_MODE_DRY])) {
+            throw new \Exception('Unknown mode');
+        }
+
+        $this->runMode = $runMode;
+    }
+
+    /**
+     * Validates identifier.
+     * It must not be empty.
+     *
+     * @param $identifier
+     * @return false
+     */
+    protected function validateIdentifier($identifier) {
+        return !empty($identifier);
+    }
+
+    /**
+     * Report summary totals.
+     */
+    protected function reportSummary() {
+        $this->reportManager->block(REPORT_STATUS_INFO, $this->summary);
+    }
+
+    /**
+     * Report each invalid entry information.
+     */
+    protected function reportInvalidEntries() {
+        $this->userDataRepository->reportIdentifierDuplicates();
+        $this->userDataRepository->reportCardNumberDuplicates();
+        $this->userDataRepository->reportEntriesWithCardNumbersAlreadyTaken();
     }
 }

@@ -7,7 +7,9 @@ use App\DTO\UserDataDTO;
 use App\Events\DeleteCustomer;
 use App\Models\UserData;
 use App\Services\CsvReader;
-use App\Services\Filer;
+use App\Services\FileService;
+use App\Services\ReportFormatService;
+use App\Services\ReportManager;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -26,20 +28,6 @@ class UserDataRepository
     public const WORK_TABLE_NAME = 'worktable';
 
     /**
-     * Constants representing the initial status of row in temporary table.
-     */
-    public const ENTRY_STATUS_UNKNOWN = 0;
-    public const ENTRY_STATUS_PARSE_ERROR = 1;
-    public const ENTRY_STATUS_ID_DUPLICATE = 2;
-    public const ENTRY_STATUS_CARDNUMBER_DUPLICATE = 3;
-    public const ENTRY_STATUS_DB_DUPLICATE = 4;
-    public const ENTRY_STATUS_TO_ADD = 5;
-    public const ENTRY_STATUS_TO_UPDATE = 6;
-    public const ENTRY_STATUS_TO_RESTORE = 7;
-    public const ENTRY_STATUS_TO_DELETE = 8;
-    public const ENTRY_STATUS_NOT_CHANGED = 9;
-
-    /**
      * The Userdata entity instance.
      *
      * @var UserData
@@ -53,14 +41,45 @@ class UserDataRepository
      */
     private $customerRepository;
 
+    /**
+     * The service used for reporting purposes.
+     *
+     * @var ReportManager
+     */
+
+    private $reportManager;
+    /**
+     * The service that formats messages for reporting.
+     *
+     * @var ReportFormatService
+     */
+    private $reportFormatService;
+
+    /**
+     * Run mode.
+     * Default is normal with DB updates.
+     * Dry mode is for getting summary and reporting only.
+     *
+     * @var int
+     */
+    private $runMode = RUN_MODE_NORMAL;
 
     /**
      * Create a new Userdata Repository instance.
      *
+     * @param ReportManager $reportManager
+     * @param ReportFormatService $reportFormatService
      * @param UserData $model
      * @param CustomerRepository $customerRepository
      */
-    public function __construct(UserData $model, CustomerRepository $customerRepository){
+    public function __construct(
+        ReportManager $reportManager,
+        ReportFormatService $reportFormatService,
+        UserData $model,
+        CustomerRepository $customerRepository
+    ){
+        $this->reportManager = $reportManager;
+        $this->reportFormatService = $reportFormatService;
         $this->model = $model;
         $this->customerRepository = $customerRepository;
     }
@@ -127,7 +146,7 @@ class UserDataRepository
             $table->string('first_name', 30);
             $table->string('last_name', 30);
             $table->string('card_number');
-            $table->integer('status_id')->default(self::ENTRY_STATUS_UNKNOWN);
+            $table->integer('status_id')->default(ENTRY_STATUS_UNKNOWN);
             $table->index(['identifier']);
             $table->index(['card_number']);
             $table->index(['status_id']);
@@ -165,7 +184,7 @@ class UserDataRepository
 
         DB::insert("INSERT INTO " . self::WORK_TABLE_NAME . "(id,identifier,first_name,last_name,card_number,status_id) "
             . "VALUES ".
-            rtrim(str_repeat("(NULL,?,?,?,?,". self::ENTRY_STATUS_UNKNOWN . "),",count($rows)),","),
+            rtrim(str_repeat("(NULL,?,?,?,?,". ENTRY_STATUS_UNKNOWN . "),",count($rows)),","),
             $values);
     }
 
@@ -176,7 +195,7 @@ class UserDataRepository
      */
     public function singleInsertSql($row) {
         DB::insert("INSERT INTO " . self::WORK_TABLE_NAME . "(id,identifier,first_name,last_name,card_number,status_id) "
-            . "VALUES (NULL,?,?,?,?,". self::ENTRY_STATUS_UNKNOWN . ")", array_values($row));
+            . "VALUES (NULL,?,?,?,?,". ENTRY_STATUS_UNKNOWN . ")", array_values($row));
     }
 
     /**
@@ -187,7 +206,7 @@ class UserDataRepository
     public function bulkInsertSqlRaw($rows) {
         $values = "";
         foreach ($rows as $row) {
-            $values .= "(NULL,'".addslashes($row['identifier'])."','".addslashes($row['first_name'])."','".addslashes($row['last_name'])."','".addslashes($row['card_number'])."',". self::ENTRY_STATUS_UNKNOWN . "),";
+            $values .= "(NULL,'".addslashes($row['identifier'])."','".addslashes($row['first_name'])."','".addslashes($row['last_name'])."','".addslashes($row['card_number'])."',". ENTRY_STATUS_UNKNOWN . "),";
         }
 
         DB::statement("INSERT INTO " . self::WORK_TABLE_NAME . "(id,identifier,first_name,last_name,card_number,status_id) "
@@ -201,51 +220,51 @@ class UserDataRepository
      */
     public function singleInsertSqlRaw($row) {
         DB::statement("INSERT INTO " . self::WORK_TABLE_NAME . "(id,identifier,first_name,last_name,card_number,status_id) "
-            . "VALUES (NULL,'".addslashes($row['identifier'])."','".addslashes($row['first_name'])."','".addslashes($row['last_name'])."','".addslashes($row['card_number'])."',". self::ENTRY_STATUS_UNKNOWN . ")");
+            . "VALUES (NULL,'".addslashes($row['identifier'])."','".addslashes($row['first_name'])."','".addslashes($row['last_name'])."','".addslashes($row['card_number'])."',". ENTRY_STATUS_UNKNOWN . ")");
     }
 
     /**
      * Mark identifier duplicates.
      */
-    public function validateIdentifierDuplicates() { // who is whose duplicate!
+    public function markIdentifierDuplicates() { // who is whose duplicate!
         DB::table(self::WORK_TABLE_NAME .' as u1')
             ->join(self::WORK_TABLE_NAME .' as u2', 'u1.identifier', '=', 'u2.identifier')
             ->where([
-                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN], // AND NOT _REJECTED
-                ['u2.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+                ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN], // AND NOT _REJECTED
+                ['u2.status_id', '=', ENTRY_STATUS_UNKNOWN],
             ])
             ->whereRaw('u1.id <> u2.id')
-            ->update(['u1.status_id' => self::ENTRY_STATUS_ID_DUPLICATE]);
+            ->update(['u1.status_id' => ENTRY_STATUS_ID_DUPLICATE]);
     }
 
     /**
      * Mark card number duplicates in DB tmp table.
      * Describe if complex structure is used to store status.
      */
-    public function validateCardNumberDuplicates() { // do update however is called validate
+    public function markCardNumberDuplicates() { // do update however is called validate
         DB::table(self::WORK_TABLE_NAME .' as u1')
             ->join(self::WORK_TABLE_NAME .' as u2', 'u1.card_number', '=', 'u2.card_number')
             ->where([
-                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
-                ['u2.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+                ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN],
+                ['u2.status_id', '=', ENTRY_STATUS_UNKNOWN],
             ])
             ->whereRaw('u1.id <> u2.id')
-            ->update(['u1.status_id' => self::ENTRY_STATUS_CARDNUMBER_DUPLICATE]);
+            ->update(['u1.status_id' => ENTRY_STATUS_CARDNUMBER_DUPLICATE]);
     }
 
 
     /**
      * Mark entries whose card numbers has already been taken by others.
      */
-    public function validateAgainstDb() { // validate what exactly? + what is dup id
+    public function markEntriesWithCardNumbersAlreadyTaken() { // validate what exactly? + what is dup id
         // we'd maybe better go with subquery
         DB::table(self::WORK_TABLE_NAME .' as u1')
             ->join('customers' .' as u2', 'u1.card_number', '=', 'u2.card_number')
             ->where([
-                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+                ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN],
             ])
             ->whereRaw('u1.identifier <> u2.id AND u2.deleted_at IS NULL')
-            ->update(['u1.status_id' => self::ENTRY_STATUS_DB_DUPLICATE]);
+            ->update(['u1.status_id' => ENTRY_STATUS_DB_DUPLICATE]);
     }
 
     /**
@@ -256,10 +275,10 @@ class UserDataRepository
         DB::table(self::WORK_TABLE_NAME .' as u1')
             ->leftJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
             ->where([
-                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+                ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN],
             ])
             ->whereRaw('u2.id IS NULL')
-            ->update(['u1.status_id' => self::ENTRY_STATUS_TO_ADD]);
+            ->update(['u1.status_id' => ENTRY_STATUS_TO_ADD]);
     }
 
     /**
@@ -270,14 +289,14 @@ class UserDataRepository
         DB::table(self::WORK_TABLE_NAME .' as u1')
             ->leftJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
             ->where([
-                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+                ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN],
             ])
             ->whereRaw(
                 'u2.id IS NOT NULL
                 AND u2.deleted_at IS NULL
                 AND (u1.first_name <> u2.first_name OR u1.last_name <> u2.last_name OR u1.card_number <> u2.card_number)'
             )
-            ->update(['u1.status_id' => self::ENTRY_STATUS_TO_UPDATE]);
+            ->update(['u1.status_id' => ENTRY_STATUS_TO_UPDATE]);
     }
 
     /**
@@ -287,19 +306,19 @@ class UserDataRepository
     public function markEntriesNotChanged() {
         DB::table(self::WORK_TABLE_NAME .' as u1')
             ->where([
-                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+                ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN],
             ])
-            ->update(['u1.status_id' => self::ENTRY_STATUS_NOT_CHANGED]);
+            ->update(['u1.status_id' => ENTRY_STATUS_NOT_CHANGED]);
 
         // check all fields approach - this one is better!
         // hardcode fields - to config (configs as set of classes based on base class)
         /*DB::table(self::WORK_TABLE_NAME .' as u1')
             ->leftJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
             ->where([
-                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+                ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN],
             ])
             ->whereRaw('u2.id IS NOT NULL AND (u1.first_name = u2.first_name AND u1.last_name = u2.last_name AND u1.card_number = u2.card_number)')
-            ->update(['u1.status_id' => self::ENTRY_STATUS_NOT_CHANGED]);*/
+            ->update(['u1.status_id' => ENTRY_STATUS_NOT_CHANGED]);*/
     }
 
     /**
@@ -310,10 +329,10 @@ class UserDataRepository
         DB::table(self::WORK_TABLE_NAME .' as u1')
             ->leftJoin('customers' .' as u2', 'u1.identifier', '=', 'u2.id')
             ->where([
-                ['u1.status_id', '=', self::ENTRY_STATUS_UNKNOWN],
+                ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN],
             ])
             ->whereRaw('u2.deleted_at IS NOT NULL')
-            ->update(['u1.status_id' => self::ENTRY_STATUS_TO_RESTORE]);
+            ->update(['u1.status_id' => ENTRY_STATUS_TO_RESTORE]);
     }
 
     /**
@@ -332,7 +351,8 @@ class UserDataRepository
 
     /**
      * Delete rows from database.
-     * Trigger event on each deletion.
+     * Trigger event and report on each deletion.
+     * Report
      *
      * @todo Put all rows that can't be deleted to can_not delete list.
      */
@@ -345,10 +365,17 @@ class UserDataRepository
 
         foreach ($cursor as $row) {
             // transaction performance - mass delete vs one-by-one, people+users
-            $customer = $this->customerRepository->deleteRow($row->id);
+            try {
+                if ($this->runMode == RUN_MODE_NORMAL) {
+                    $customer = $this->customerRepository->deleteRow($row->id);
 
-            // check if row can be deleted - on validation, not here
-            event(new DeleteCustomer($customer)); // reporting independently, not in events
+                    event(new DeleteCustomer($customer));
+                }
+
+                $this->reportManager->line(REPORT_STATUS_INFO, $this->reportFormatService->customerDeleted($customer));
+            } catch (\Exception $exception) {
+                $this->reportManager->line(REPORT_STATUS_ERROR, $this->reportFormatService->customerDeleteError($customer));
+            }
         }
     }
 
@@ -401,40 +428,79 @@ class UserDataRepository
             ->groupBy('status_id')
             ->get();
 
-        foreach ($result as $row) {
-            switch ($row->status_id) {
-                case self::ENTRY_STATUS_ID_DUPLICATE:
-                    $summary->setIdDuplicate($row->total);
-                    break;
-
-                case self::ENTRY_STATUS_CARDNUMBER_DUPLICATE:
-                    $summary->setCardNumberDuplicate($row->total);
-                    break;
-
-                case self::ENTRY_STATUS_DB_DUPLICATE:
-                    $summary->setDbDuplicate($row->total);
-                    break;
-
-                case self::ENTRY_STATUS_TO_ADD:
-                    $summary->setToAdd($row->total);
-                    break;
-
-                case self::ENTRY_STATUS_TO_UPDATE:
-                    $summary->setToUpdate($row->total);
-                    break;
-
-                case self::ENTRY_STATUS_TO_RESTORE:
-                    $summary->setToRestore($row->total);
-                    break;
-
-                case self::ENTRY_STATUS_NOT_CHANGED:
-                    $summary->setNotChanged($row->total);
-                    break;
-            }
-        }
+        return $summary;
 
         $summary->setToDelete($this->countEntriesToDelete());
 
         return $summary;
+    }
+
+    /**
+     * Set run mode, either normal or dry.
+     *
+     * @param $runMode
+     * @throws \Exception
+     */
+    public function setRunMode($runMode) {
+        if (!in_array($runMode, [RUN_MODE_NORMAL, RUN_MODE_DRY])) {
+            throw new \Exception('Unknown mode');
+        }
+
+        $this->runMode = $runMode;
+    }
+
+    /**
+     * Return total number of entries.
+     *
+     * @return int
+     */
+    public function countTotalEntries()
+    {
+        //...
+        return 0;
+    }
+
+    /**
+     * Return number if records that supposed to be deleted but can't be deleted
+     *
+     * @return int
+     */
+    public function countEntriesCantDelete()
+    {
+        //...
+        return 0;
+    }
+
+    /**
+     * Report identifier duplicate entries.
+     */
+    public function reportIdentifierDuplicates() {
+        $cursor = null;
+
+        foreach ($cursor as $row) {
+            $this->reportManager->line(REPORT_STATUS_INFO, "");
+        }
+    }
+
+    /**
+     * Report card number duplicates entries.
+     */
+    public function reportCardNumberDuplicates() {
+        $cursor = null;
+
+        foreach ($cursor as $row) {
+            $this->reportManager->line(REPORT_STATUS_INFO, "");
+        }
+    }
+
+    /**
+     * Report card number aready taken values.
+     */
+    public function reportEntriesWithCardNumbersAlreadyTaken() {
+        $cursor = null;
+
+        foreach ($cursor as $row) {
+            $this->reportManager->line(REPORT_STATUS_INFO, "");
+        }
     }
 }

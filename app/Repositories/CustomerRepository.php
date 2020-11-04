@@ -5,6 +5,11 @@ namespace App\Repositories;
 use App\Models\Customer;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * Repository to work with customers.
+ *
+ * @package App\Repositories
+ */
 class CustomerRepository
 {
     /**
@@ -27,7 +32,7 @@ class CustomerRepository
      * Soft delete row by id.
      *
      * @param $id
-     * @return mixed
+     * @return Customer
      */
     public function deleteRow($id)
     {

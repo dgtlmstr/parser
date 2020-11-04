@@ -2,7 +2,12 @@
 
 namespace App\Services;
 
-interface FilerInterface
+/**
+ * Interface to work with files.
+ *
+ * @package App\Services
+ */
+interface FileServiceInterface
 {
     /**
      * Set filename.

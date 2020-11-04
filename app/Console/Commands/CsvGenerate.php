@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\CsvFakerGenerator;
-use App\Services\Filer;
+use App\Services\FileService;
 use Illuminate\Console\Command;
 
 class CsvGenerate extends Command
@@ -23,7 +23,7 @@ class CsvGenerate extends Command
 
     protected $description = 'Command description';
     /**
-     * @var Filer
+     * @var FileService
      */
 
     private $filer;
@@ -37,7 +37,7 @@ class CsvGenerate extends Command
      *
      * @return void
      */
-    public function __construct(Filer $filer, CsvFakerGenerator $generator)
+    public function __construct(FileService $filer, CsvFakerGenerator $generator)
     {
         $this->filer = $filer;
         $this->filer->setFolder(env("UPDATE_DIR_PATH"));

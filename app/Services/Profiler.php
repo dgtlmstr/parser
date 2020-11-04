@@ -69,7 +69,7 @@ class Profiler
      * @return int
      */
     public function getPeakMemory() {
-        return memory_get_peak_usage();
+        return memory_get_peak_usage(true);
     }
 
     /**

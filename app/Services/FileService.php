@@ -4,7 +4,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\File;
 
-class Filer implements FilerInterface
+class FileService implements FileServiceInterface
 {
     /**
      * Filename without path.

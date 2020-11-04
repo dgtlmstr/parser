@@ -14,9 +14,9 @@ interface ReaderInterface
     /**
      * Return pointer to iterator.
      *
-     * @param Filer $filer
+     * @param FileService $filer
      * @return \Iterator
      * @throws \Exception
      */
-    public function getFilePointer(Filer $filer) : \Iterator;
+    public function getFilePointer(FileService $filer) : \Iterator;
 }

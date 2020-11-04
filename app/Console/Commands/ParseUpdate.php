@@ -11,10 +11,11 @@ class ParseUpdate extends Command
 {
     /**
      * The name and signature of the console command.
+     * Can be used with parameter "--dry" for dry run.
      *
      * @var string
      */
-    protected $signature = 'parser:update';
+    protected $signature = 'parser:update {--mode=null}';
 
     /**
      * The console command description.
@@ -38,6 +39,7 @@ class ParseUpdate extends Command
     public function __construct(Parser $parser)
     {
         $this->parser = $parser;
+
         parent::__construct();
     }
 
@@ -48,12 +50,13 @@ class ParseUpdate extends Command
      */
     public function handle()
     {
-        try {
-            $result = $this->parser->processFeed(); //+report info, ?report summary
-            $this->line(date('[H:i:s] ') . "Update ok");
-        } catch (Exception $exception) { // change exception
-            $this->line(date('[H:i:s] ') . "Update error");
+        $mode = $this->option('mode');
+        if ($mode == 'dry') {
+            $this->parser->setRunMode(RUN_MODE_DRY);
         }
+
+        $result = $this->parser->processFeed();
+        $this->line(date('[H:i:s] ') . $result ? "Update okay" : "Update failed");
 
         return 0;
     }

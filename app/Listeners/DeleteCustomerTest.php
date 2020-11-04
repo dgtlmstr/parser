@@ -7,7 +7,12 @@ use App\Services\ReportManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 
-class ReportDeleteCustomer
+/**
+ * Test Listener.
+ *
+ * @package App\Listeners
+ */
+class DeleteCustomerTest
 {
     /**
      * @var ReportManager
@@ -32,7 +37,6 @@ class ReportDeleteCustomer
      */
     public function handle(DeleteCustomer $event)
     {
-        //todo: report $event->customer deleted
-        $this->reporter->report(ReportManager::REPORT_STATUS_INFO, "Customer deleted");
+        $this->reporter->line(ReportManager::REPORT_STATUS_INFO, "Customer deleted");
     }
 }

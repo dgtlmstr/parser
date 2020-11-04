@@ -62,7 +62,7 @@ class ProfileAddEntries extends Command
 
         $this->parser->createTemporaryTable();
 
-        $this->parser->validateAndParseCsv();
+        $this->parser->validateAndParseCsvToDatabase();
         $this->echoProfilerData();
 
         return 0;
