@@ -1,11 +1,19 @@
-Customer deletedCustomer deletedCustomer deletedCustomer deletedCustomer deletedCustomer deleted
 Customer deleted
 Customer deleted
 Customer deleted
 Customer deleted
-Deleted: customer [778]   
+Deleted: customer [778]
 Customer deleted
-Deleted: customer [778]   
+Deleted: customer [778]
 Customer deleted
 Deleted: customer [778] Name Last name, Card
 Bad identifier found! Update failed
+Identifier duplicates count: 0 
+Card number duplicates count: 0 
+Card number already taken count: 0 
+Entries to add: 0 
+Entries to update: 0 
+Entries to restore: 0 
+Entries to delete: 0 
+Entries not changed: 0 
+Total entries: 0 

@@ -385,6 +385,7 @@ class UserDataRepository
     public function restoreRows()
     {
         $cursor = null;
+        return;
 
         foreach ($cursor as $row) {
             //$customer = $this->customerRepository->restoreRow($row->id);
@@ -475,7 +476,8 @@ class UserDataRepository
      * Report identifier duplicate entries.
      */
     public function reportIdentifierDuplicates() {
-        $cursor = null;
+        $cursor = null;  //check if 100-200K rows will be ok to store in PHP memory
+        return;
 
         foreach ($cursor as $row) {
             $this->reportManager->line(REPORT_STATUS_INFO, "");
@@ -487,6 +489,7 @@ class UserDataRepository
      */
     public function reportCardNumberDuplicates() {
         $cursor = null;
+        return;
 
         foreach ($cursor as $row) {
             $this->reportManager->line(REPORT_STATUS_INFO, "");
@@ -498,6 +501,7 @@ class UserDataRepository
      */
     public function reportEntriesWithCardNumbersAlreadyTaken() {
         $cursor = null;
+        return;
 
         foreach ($cursor as $row) {
             $this->reportManager->line(REPORT_STATUS_INFO, "");

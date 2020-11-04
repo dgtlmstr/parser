@@ -36,44 +36,52 @@ class Parser {
     protected $runMode = RUN_MODE_NORMAL;
 
     /**
+     * Flag determining if threshold limit should be taken into account.
+     * Limit is applied by default by default (fale value).
+     *
+     * @var bool
+     */
+    protected $ignoreThresholdLimit = false;
+
+    /**
      * The instance of the Filer class.
      *
      * @var FileService
      */
-    private $fileService;
+    protected $fileService;
 
     /**
      * The instance of the Userdata Repository.
      *
      * @var UserDataRepository
      */
-    private $userDataRepository;
+    protected $userDataRepository;
 
     /**
      * The Summary instance.
      *
      * @var Summary
      */
-    private $summary;
+    protected $summary;
 
     /**
      * The Array to buffer entries for bulk insert to the work table.
      *
      * @var array
      */
-    private $entriesBuffer;
+    protected $entriesBuffer;
 
     /**
      * The Csv Parser instance.
      *
      * @var CsvReader
      */
-    private $csvReader;
+    protected $csvReader;
 
     /**
      * @var ReportManager
      */
-    private $reportManager;
+    protected $reportManager;
 
     /**
      * Create a new Parser instance.
@@ -110,7 +118,7 @@ class Parser {
      * 4. Mark entries for operations.
      * 5. Calculate summary.
      * 6. Apply update if it's not a dry run.
-     * 7. Report.
+     * 7. Report summary.
      *
      * Return true on successful processing and false in case of failure.
      *
@@ -118,31 +126,42 @@ class Parser {
      * @throws \Exception
      */
     public function processFeed() : bool {
+        //db manager
+        //file manager
+
         //todo: custom exceptions
         $this->createTemporaryTable();
 
-        if (!$this->validateAndParseCsvToDatabase()) {
-            return false;
+        if (!$this->validateAndParseCsvToDatabase()) { //+mapping to name?
+            return false; //exception i/o bool
         }
 
-        $this->markInvalidEntries();
-        $this->reportInvalidEntries();
+        $this->markInvalidEntries(); //name : vaidate, inside name : mark
+        $this->reportInvalidEntries(); //do not report here, it will be called later
 
-        $this->markEntriesForOperations();
+        $this->markEntriesForOperations(); //name: define action
         $this->calcSummary();
 
-        if (!$this->checkIfUpdateCanBeApplied()) {
-            $this->reportSummary();
+        if (!$this->checkIfUpdateCanBeApplied()) { //dry mode - take into account
+            $this->reportSummary(); // report to log/console
             return false;
         }
 
         // in dry mode it will report only
         // should we implement separate method for dry run?
         $this->applyUpdateWithReporting();
+
         $this->calcSummary(); // recalc
-        $this->reportSummary();
+        $this->reportSummary(); //reportservice - report, etc, call from services, don't wrap
 
         return true;
+    }
+
+    /**
+     * may be called after process
+     */
+    public function getReport() {
+        //..
     }
 
     /**
@@ -179,22 +198,27 @@ class Parser {
         }
 
         //todo: check if loop can be done in a shorter way (eg, foreach)
+        //still try foreach with cursor
         while ($filePointer->valid()) {
             $row = $filePointer->current();
-            if ($row[0] === null) continue;
+            if ($row[0] === null) continue; // try to avoid
 
             $entry = $this->mapEntry($row);
 
+            // validateentry + validateidentifier - make united method
             if (!$this->validateEntry($entry)) {
                 $entry['status_id'] = ENTRY_STATUS_PARSE_ERROR;
             }
 
-            if (!$this->validateIdentifier($entry['identifier'])) {
+            if (!$this->validateIdentifier($entry['identifier'])) { //try to run until end but will fail
+                //don't use report manager here
+                //add row to db with eg ENTRY_STATUS_BAD_ID
+                //add information : line number
                 $this->reportManager->line(REPORT_STATUS_ERROR, "Bad identifier found! Update failed");
                 return false;
             }
 
-            $this->addEntryToDB($entry);
+            $this->addEntryToDB($entry); //we should know what the reason of invalid entries
 
             $filePointer->next();
         }
@@ -276,10 +300,10 @@ class Parser {
         if (self::PARSER_INSERT_MODE == 'single' ||
             self::PARSER_INSERT_MODE == 'singleSql' ||
             self::PARSER_INSERT_MODE == 'singleSqlRaw' ||
-            count($this->entriesBuffer) == self::BULK_INSERT_LIMIT) {
+            count($this->entriesBuffer) == self::BULK_INSERT_LIMIT) { //make counter for better performance
             $this->commitEntries();
 
-            unset($this->entriesBuffer);
+            unset($this->entriesBuffer); //maybe remove
             $this->entriesBuffer = [];
         }
     }
@@ -288,7 +312,7 @@ class Parser {
      * Commit entries to DB
      */
     protected function commitEntries() {
-        if (count($this->entriesBuffer) == 0) return;
+        if (count($this->entriesBuffer) == 0) return; //check just with the last commit
 
         if (self::PARSER_INSERT_MODE == 'bulk') {
             $this->userDataRepository->bulkInsert($this->entriesBuffer);
@@ -334,6 +358,7 @@ class Parser {
      */
     protected function calcSummary() {
         $this->summary->setSummary($this->userDataRepository->getSummary());
+        // make few requests for better code
         $this->summary->setCountToDelete($this->userDataRepository->countEntriesToDelete());
         $this->summary->setCountCantDelete($this->userDataRepository->countEntriesCantDelete());
         $this->summary->setTotalEntries($this->userDataRepository->countTotalEntries());
@@ -348,6 +373,11 @@ class Parser {
     protected function checkIfUpdateCanBeApplied() : bool {
         if ($this->summary->getCountToDelete() >= self::UPDATE_THRESHOLD_LIMIT ||
             $this->summary->getCountToUpdate() >= self::UPDATE_THRESHOLD_LIMIT) {
+
+            if ($this->ignoreThresholdLimit) {
+                $this->reportManager->line(REPORT_STATUS_ERROR, 'Update row count is above threshold! Limit ignored, continue update');
+                return true;
+            }
 
             $this->reportManager->block(REPORT_STATUS_INFO, $this->summary);
             $this->reportManager->line(REPORT_STATUS_ERROR, 'Update row count is above threshold! Update failed');
@@ -376,6 +406,7 @@ class Parser {
      */
     public function createTemporaryTable()
     {
+        //redundant method
         $this->userDataRepository->createTemporaryTable();
     }
 
@@ -408,6 +439,8 @@ class Parser {
      * Report summary totals.
      */
     protected function reportSummary() {
+        //make report and print,
+        // files to be able to get info on process - another method (flag/option - create file or not)
         $this->reportManager->block(REPORT_STATUS_INFO, $this->summary);
     }
 
@@ -418,5 +451,13 @@ class Parser {
         $this->userDataRepository->reportIdentifierDuplicates();
         $this->userDataRepository->reportCardNumberDuplicates();
         $this->userDataRepository->reportEntriesWithCardNumbersAlreadyTaken();
+    }
+
+    /**
+     * @param bool $ignoreThresholdLimit
+     */
+    public function setIgnoreThresholdLimit(bool $ignoreThresholdLimit): void
+    {
+        $this->ignoreThresholdLimit = $ignoreThresholdLimit;
     }
 }

@@ -12,7 +12,7 @@ class Summary
      * Properties to keep summary values.
      */
     private $countParseError = 0;
-    private $countIdDuplicate = 0;
+    private $countIdDuplicate = 0; //iddupcoount
     private $countCardNumberDuplicate = 0;
     private $countDbDuplicate = 0;
     private $countToAdd = 0;
