@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\Parser;
+use App\Services\ParseManager;
 use Illuminate\Console\Command;
 
 /**
@@ -31,18 +31,18 @@ class ParseUpdate extends Command
     /**
      * The instance of the Parser service.
      *
-     * @var Parser
+     * @var ParseManager
      */
-    private $parser;
+    private $parseManager;
 
     /**
      * Create a new command instance.
      *
-     * @param Parser $parser
+     * @param ParseManager $parseManager
      */
-    public function __construct(Parser $parser)
+    public function __construct(ParseManager $parseManager)
     {
-        $this->parser = $parser;
+        $this->parseManager = $parseManager;
 
         parent::__construct();
     }
@@ -56,17 +56,27 @@ class ParseUpdate extends Command
     {
         $mode = $this->option('mode');
         if ($mode == 'dry') {
-            $this->parser->setRunMode(RUN_MODE_DRY); //exception to handle
+            $this->parseManager->setRunMode(RUN_MODE_DRY);
         }
 
         $ignoreThresholdLimit = $this->option('ignore-threshold-limit');
         if ($ignoreThresholdLimit == 'true') {
-            $this->parser->setIgnoreThresholdLimit(true);
+            $this->parseManager->setIgnoreThresholdLimit(true);
         }
 
-        $result = $this->parser->processFeed();
-        $this->line(date('[H:i:s] ') . $result ? "Update okay" : "Update failed");
+        try {
+            $this->parseManager->processFeed();
+            $this->line(date('[H:i:s] ') . "Update okay");
 
-        return 0; //if failed other return, maybe try catch
+            $reportManager = $this->parseManager->getReportManager();
+            $reportManager->reportSummary();
+            $this->line($reportManager->getSummary());
+            $reportManager->reportInvalidEntries();
+
+            return 0;
+        } catch (\Exception $exception) {
+            $this->line(date('[H:i:s] ') . "Update failed");
+            return 1;
+        }
     }
 }

@@ -17,3 +17,42 @@ Entries to restore: 0
 Entries to delete: 0 
 Entries not changed: 0 
 Total entries: 0 
+Bad identifier entries: 0Parse error entries: 0Identifier duplicate entries: 22953Card number duplicate entries: 0Card already taken entries: 0Entries to add: 2047Entries to update: 0Entries to restore: 0Entries to delete: 0Entries can't be deleted: 0Entries not changed: 0Total entries: 0Bad identifier entries: 0Parse error entries: 0Identifier duplicate entries: 22953Card number duplicate entries: 0Card already taken entries: 0Entries to add: 2047Entries to update: 0Entries to restore: 0Entries to delete: 0Entries can't be deleted: 0Entries not changed: 0Total entries: 0Bad Identifier entries
+Parse error entries
+Identifier duplicate entries
+Card number dupicate entries
+Card number already taken entries
+Bad identifier entries: 0
+Parse error entries: 0
+Identifier duplicate entries: 22953
+Card number duplicate entries: 0
+Card already taken entries: 0
+Entries to add: 2047
+Entries to update: 0
+Entries to restore: 0
+Entries to delete: 0
+Entries can't be deleted: 0
+Entries not changed: 0
+Total entries: 0
+Bad Identifier entries
+Parse error entries
+Identifier duplicate entries
+Card number dupicate entries
+Card number already taken entries
+Bad identifier entries: 0
+Parse error entries: 0
+Identifier duplicate entries: 22953
+Card number duplicate entries: 0
+Card already taken entries: 0
+Entries to add: 2047
+Entries to update: 0
+Entries to restore: 0
+Entries to delete: 0
+Entries can't be deleted: 0
+Entries not changed: 0
+Total entries: 0
+Bad Identifier entries
+Parse error entries
+Identifier duplicate entries
+Card number dupicate entries
+Card number already taken entries

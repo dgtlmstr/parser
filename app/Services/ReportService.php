@@ -8,7 +8,7 @@ namespace App\Services;
  *
  * @package App\Services
  */
-class ReportManager
+class ReportService
 {
     /**
      * @var FileService
@@ -53,4 +53,6 @@ class ReportManager
     public function block(int $reportStatus, string $block) {
         fwrite($this->filePointer, $block);
     }
+
+
 }

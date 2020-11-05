@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\Parser;
+use App\Services\ParseManager;
 use App\Services\Profiler;
 use Illuminate\Console\Command;
 
@@ -28,7 +28,7 @@ class ProfileAddEntries extends Command
     protected $description = 'Command description';
 
     /**
-     * @var Parser
+     * @var ParseManager
      */
     private $parser;
     /**
@@ -39,11 +39,11 @@ class ProfileAddEntries extends Command
     /**
      * Create a new command instance.
      *
-     * @param Parser $parser
+     * @param ParseManager $parseManager
      */
-    public function __construct(Parser $parser, Profiler $profiler)
+    public function __construct(ParseManager $parseManager, Profiler $profiler)
     {
-        $this->parser = $parser;
+        $this->parser = $parseManager;
         $this->profiler = $profiler;
 
         parent::__construct();
@@ -60,9 +60,9 @@ class ProfileAddEntries extends Command
         $this->profiler->fixCurrentPeakMemory();
         $this->profiler->startTimer();
 
-        $this->parser->createTemporaryTable();
+        $this->parser->createTemporaryTable($this->parser);
 
-        $this->parser->validateAndParseCsvToDatabase();
+        $this->parser->processCsv();
         $this->echoProfilerData();
 
         return 0;

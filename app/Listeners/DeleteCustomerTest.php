@@ -3,7 +3,7 @@
 namespace App\Listeners;
 
 use App\Events\DeleteCustomer;
-use App\Services\ReportManager;
+use App\Services\ReportService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 
@@ -15,16 +15,16 @@ use Illuminate\Queue\InteractsWithQueue;
 class DeleteCustomerTest
 {
     /**
-     * @var ReportManager
+     * @var ReportService
      */
     private $reporter;
 
     /**
      * Create the event listener.
      *
-     * @param ReportManager $reporter
+     * @param ReportService $reporter
      */
-    public function __construct(ReportManager $reporter)
+    public function __construct(ReportService $reporter)
     {
         $this->reporter = $reporter;
     }
@@ -37,6 +37,6 @@ class DeleteCustomerTest
      */
     public function handle(DeleteCustomer $event)
     {
-        $this->reporter->line(ReportManager::REPORT_STATUS_INFO, "Customer deleted");
+        $this->reporter->line(REPORT_STATUS_INFO, "Customer deleted test event listener caught");
     }
 }
