@@ -1,7 +1,7 @@
 <?php
 namespace App\Services;
 
-use App\Repositories\UserDataRepository;
+use App\Repositories\EntryRepository;
 
 /**
  * Feed manager allowing to handle and apply CSV update.
@@ -34,7 +34,7 @@ class ParseManager {
     /**
      * The instance of the Userdata Repository.
      *
-     * @var UserDataRepository
+     * @var EntryRepository
      */
     protected $userDataRepository;
 
@@ -78,7 +78,7 @@ class ParseManager {
      * @param ReaderInterface $csvParser
      * @param ParseReportManager $parseReportManager
      * @param ParseSummaryManager $summaryManager
-     * @param UserDataRepository $userDataRepository
+     * @param EntryRepository $userDataRepository
      * @param ParseCsvManager $csvManager
      * @param ParseDatabaseManager $dbManager
      */
@@ -87,7 +87,7 @@ class ParseManager {
         ReaderInterface $csvParser,
         ParseReportManager $parseReportManager,
         ParseSummaryManager $summaryManager,
-        UserDataRepository $userDataRepository,
+        EntryRepository $userDataRepository,
         ParseCsvManager $csvManager,
         ParseDatabaseManager $dbManager
     ){
@@ -135,6 +135,8 @@ class ParseManager {
 
         if ($this->checkIfUpdateCanBeApplied()) {
             $this->dbManager->applyUpdate();
+        } else {
+            throw new \Exception("Can't apply update"); //todo: custom exceptions
         }
 
         $this->summaryManager->calcSummary(); // recalc
@@ -181,7 +183,7 @@ class ParseManager {
             $result = false;
         }
 
-        if ($this->summaryManager->getParseBadIdCount() > 0) {
+        if ($this->csvManager->hasBadIds()) {
             $this->reportManager->addWarning("Parse bad identifier errors. Update can't be applied");
             $result = false;
         }

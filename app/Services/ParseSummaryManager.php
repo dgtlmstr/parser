@@ -1,7 +1,7 @@
 <?php
 namespace App\Services;
 
-use App\Repositories\UserDataRepository;
+use App\Repositories\EntryRepository;
 
 /**
  * Class to manage parse summary.
@@ -18,6 +18,7 @@ class ParseSummaryManager
     private $idDuplicateCount = 0;
     private $cardNumberDuplicateCount = 0;
     private $dbDuplicateCount = 0;
+    private $toRejectCount = 0;
     private $toAddCount = 0;
     private $toUpdateCount = 0;
     private $toRestoreCount = 0;
@@ -27,83 +28,36 @@ class ParseSummaryManager
     private $totalEntryCount = 0;
 
     /**
-     * @var UserDataRepository
+     * @var EntryRepository
      */
-    private $userDataRepository;
+    private $entryRepository;
 
     /**
      * ParseSummaryManager constructor.
-     * @param UserDataRepository $userDataRepository
+     * @param EntryRepository $entryRepository
      */
-    public function __construct(UserDataRepository $userDataRepository) {
-        $this->userDataRepository = $userDataRepository;
+    public function __construct(EntryRepository $entryRepository) {
+        $this->entryRepository = $entryRepository;
     }
 
     /**
      * Fill summary totals with actual data.
      */
     public function calcSummary() {
-        $this->setParseErrorCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_PARSE_ERROR));
-        $this->setParseErrorCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_PARSE_BAD_ID));
-        $this->setIdDuplicateCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_ID_DUPLICATE));
-        $this->setCardNumberDuplicateCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_CARDNUMBER_DUPLICATE));
-        $this->setDbDuplicateCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_CARDNUMBER_ALREADY_TAKEN));
-        $this->setToAddCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_TO_ADD));
-        $this->setToUpdateCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_TO_UPDATE));
-        $this->setToRestoreCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_TO_RESTORE));
-        $this->setNotChangedCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_NOT_CHANGED));
-        $this->setParseErrorCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_PARSE_ERROR));
-        $this->setParseErrorCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_PARSE_ERROR));
-        $this->setToDeleteCount($this->userDataRepository->countEntriesToDelete());
-        $this->setCantDeleteCount($this->userDataRepository->countEntriesCantDelete());
-        $this->setTotalEntryCount($this->userDataRepository->countTotalEntries());
+        //$this->setParseErrorCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_PARSE_ERROR));
+        //$this->setParseBadIdCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_PARSE_BAD_ID));
+        //$this->setIdDuplicateCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_ID_DUPLICATE));
+        //$this->setCardNumberDuplicateCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_CARDNUMBER_DUPLICATE));
+        //$this->setDbDuplicateCount($this->userDataRepository->getByStatusId(ENTRY_STATUS_CARDNUMBER_ALREADY_TAKEN));
+        $this->setToRejectCount($this->entryRepository->getByStatusId(ENTRY_STATUS_REJECTED));
+        $this->setToAddCount($this->entryRepository->getByStatusId(ENTRY_STATUS_TO_ADD));
+        $this->setToUpdateCount($this->entryRepository->getByStatusId(ENTRY_STATUS_TO_UPDATE));
+        $this->setToRestoreCount($this->entryRepository->getByStatusId(ENTRY_STATUS_TO_RESTORE));
+        $this->setNotChangedCount($this->entryRepository->getByStatusId(ENTRY_STATUS_NOT_CHANGED));
+        $this->setToDeleteCount($this->entryRepository->countEntriesToDelete());
+        $this->setCantDeleteCount($this->entryRepository->countEntriesCantDelete());
+        $this->setTotalEntryCount($this->entryRepository->countTotalEntries());
     }
-
-    /**
-     * Fill summary values with data provided.
-     *
-     * @param $summaryData
-     *
-     * @deprecated
-     */
-    public function setSummary($summaryData) {
-        foreach ($summaryData as $row) {
-            switch ($row->status_id) {
-                case ENTRY_STATUS_PARSE_ERROR:
-                    $this->setParseErrorCount($row->total);
-                    break;
-
-                case ENTRY_STATUS_ID_DUPLICATE:
-                    $this->setIdDuplicate($row->total);
-                    break;
-
-                case ENTRY_STATUS_CARDNUMBER_DUPLICATE:
-                    $this->setCardNumberDuplicateCount($row->total);
-                    break;
-
-                case ENTRY_STATUS_CARDNUMBER_ALREADY_TAKEN:
-                    $this->setDbDuplicate($row->total);
-                    break;
-
-                case ENTRY_STATUS_TO_ADD:
-                    $this->setToAdd($row->total);
-                    break;
-
-                case ENTRY_STATUS_TO_UPDATE:
-                    $this->setToUpdate($row->total);
-                    break;
-
-                case ENTRY_STATUS_TO_RESTORE:
-                    $this->setToRestore($row->total);
-                    break;
-
-                case ENTRY_STATUS_NOT_CHANGED:
-                    $this->setNotChangedCount($row->total);
-                    break;
-            }
-        }
-    }
-
 
     /**
      * Return summary string representation.
@@ -317,5 +271,21 @@ class ParseSummaryManager
     public function setParseBadIdCount(int $parseBadIdCount): void
     {
         $this->parseBadIdCount = $parseBadIdCount;
+    }
+
+    /**
+     * @return int
+     */
+    public function getToRejectCount(): int
+    {
+        return $this->toRejectCount;
+    }
+
+    /**
+     * @param int $toRejectCount
+     */
+    public function setToRejectCount(int $toRejectCount): void
+    {
+        $this->toRejectCount = $toRejectCount;
     }
 }

@@ -1,7 +1,7 @@
 <?php
 namespace App\Services;
 
-use App\Repositories\UserDataRepository;
+use App\Repositories\EntryRepository;
 
 /**
  * Allow to report parse details and handle warnings.
@@ -27,7 +27,7 @@ class ParseReportManager
     protected $warnings = [];
 
     /**
-     * @var UserDataRepository
+     * @var EntryRepository
      */
     protected $userDataRepository;
 
@@ -35,7 +35,7 @@ class ParseReportManager
      * ParseReporter constructor.
      * @param ReportService $reportService
      */
-    public function __construct(ReportService $reportService, UserDataRepository $userDataRepository) {
+    public function __construct(ReportService $reportService, EntryRepository $userDataRepository) {
         $this->reportService = $reportService;
         $this->userDataRepository = $userDataRepository;
     }
@@ -44,7 +44,6 @@ class ParseReportManager
      * Set Summary Manager
      *
      * @param ParseSummaryManager $summaryManager
-     * @param UserDataRepository $userDataRepository
      */
     public function setSummaryManager(ParseSummaryManager $summaryManager) {
         $this->summaryManager = $summaryManager;
@@ -60,12 +59,14 @@ class ParseReportManager
     /**
      * Send to report all invalid entries.
      */
-    public function reportInvalidEntries() {
-        $this->reportCollection($this->userDataRepository->getEntriesWithStatusId(ENTRY_STATUS_PARSE_BAD_ID), "Bad Identifier entries");
-        $this->reportCollection($this->userDataRepository->getEntriesWithStatusId(ENTRY_STATUS_PARSE_ERROR), "Parse error entries");
-        $this->reportCollection($this->userDataRepository->getEntriesWithStatusId(ENTRY_STATUS_ID_DUPLICATE), "Identifier duplicate entries");
-        $this->reportCollection($this->userDataRepository->getEntriesWithStatusId(ENTRY_STATUS_CARDNUMBER_DUPLICATE), "Card number dupicate entries");
-        $this->reportCollection($this->userDataRepository->getEntriesWithStatusId(ENTRY_STATUS_CARDNUMBER_ALREADY_TAKEN), "Card number already taken entries");
+    public function reportRejectedEntries() {
+        $this->reportCollection($this->userDataRepository->getEntriesWithStatusId(ENTRY_STATUS_REJECTED), "Rejected entries");
+
+        //$this->reportCollection($this->userDataRepository->getEntriesWithStatusId(ENTRY_STATUS_PARSE_BAD_ID), "Bad Identifier entries");
+        //$this->reportCollection($this->userDataRepository->getEntriesWithStatusId(ENTRY_STATUS_PARSE_ERROR), "Parse error entries");
+        //$this->reportCollection($this->userDataRepository->getEntriesWithStatusId(ENTRY_STATUS_ID_DUPLICATE), "Identifier duplicate entries");
+        //$this->reportCollection($this->userDataRepository->getEntriesWithStatusId(ENTRY_STATUS_CARDNUMBER_DUPLICATE), "Card number dupicate entries");
+        //$this->reportCollection($this->userDataRepository->getEntriesWithStatusId(ENTRY_STATUS_CARDNUMBER_ALREADY_TAKEN), "Card number already taken entries");
     }
 
     /**
@@ -80,7 +81,8 @@ class ParseReportManager
         }
 
         foreach ($entryCollection as $entry) {
-            $this->reportService->line(REPORT_STATUS_INFO, $entry);
+            $line = "Line {$entry->id}: Identifier={$entry->identifier}, {$entry->status_details}";
+            $this->reportService->line(REPORT_STATUS_INFO, $line);
         }
     }
 
@@ -91,11 +93,7 @@ class ParseReportManager
      */
     public function getSummary() : string {
         $result = "";
-        $result .= "Bad identifier entries: " . $this->summaryManager->getParseBadIdCount() . "\n";
-        $result .= "Parse error entries: " . $this->summaryManager->getParseErrorCount() . "\n";
-        $result .= "Identifier duplicate entries: " . $this->summaryManager->getIdDuplicateCount() . "\n";
-        $result .= "Card number duplicate entries: " . $this->summaryManager->getCardNumberDuplicateCount() . "\n";
-        $result .= "Card already taken entries: " . $this->summaryManager->getDbDuplicateCount() . "\n";
+        $result .= "Rejected entries: " . $this->summaryManager->getToRejectCount() . "\n";
         $result .= "Entries to add: " . $this->summaryManager->getToAddCount() . "\n";
         $result .= "Entries to update: " . $this->summaryManager->getToUpdateCount() . "\n";
         $result .= "Entries to restore: " . $this->summaryManager->getToRestoreCount() . "\n";

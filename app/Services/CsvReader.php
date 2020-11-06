@@ -1,7 +1,8 @@
 <?php
 namespace App\Services;
 
-use SplFileObject;
+//use SplFileObject;
+use League\Csv\Reader;
 
 /**
  * Allow to read from CSV file.
@@ -23,21 +24,27 @@ class CsvReader implements ReaderInterface
      *
      * @throws \Exception
      */
-    public function getFilePointer(FileService $filer) : \Iterator {
-        if ($filer->isFileEmpty()) {
+    public function getFilePointer(FileService $fileService) : \Iterator
+    {
+        if ($fileService->isFileEmpty()) {
             throw new \Exception('Empty file');
         }
 
-        $csvPointer = new SplFileObject($filer->getFullFileName());
+        $skipFirstLine = true; // move to settings
+
+        /*$csvPointer = new SplFileObject($fileService->getFullFileName());
         $csvPointer->setFlags(SplFileObject::READ_CSV);
         $csvPointer->setCsvControl("\t", '"', '\\'); // move to settings
 
-        $skipFirstLine = true; // move to settings
         if ($skipFirstLine) {
             $csvPointer->current();
             $csvPointer->next();
-        }
+        }*/
 
-        return $csvPointer;
+        $reader = Reader::createFromPath($fileService->getFullFileName(), 'r');
+        $reader->skipEmptyRecords();
+        $reader->setHeaderOffset(0);
+        $reader->setDelimiter("\t");
+        return $reader->getRecords();
     }
 }

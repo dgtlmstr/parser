@@ -3,24 +3,22 @@
 namespace App\Repositories;
 
 use App\DTO\UpdateSummaryDTO;
-use App\DTO\UserDataDTO;
-use App\Models\UserData;
+use App\DTO\EntryDTO;
+use App\Models\Entry;
 use App\Services\ReportFormatService;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Allow to work with entry temporary table
  *
  * @package App\Repositories
  */
-class UserDataRepository
+class EntryRepository
 {
     /**
-     * The Userdata entity instance.
+     * The Entry entity instance.
      *
-     * @var UserData
+     * @var Entry
      */
     private $model;
 
@@ -32,22 +30,22 @@ class UserDataRepository
     private $reportFormatService;
 
     /**
-     * Create a new Userdata Repository instance.
+     * Create a new Entry Repository instance.
      *
-     * @param UserData $model
+     * @param Entry $model
      */
-    public function __construct(
-        UserData $model
-    ){
+    public function __construct(Entry $model) {
         $this->model = $model;
     }
 
     /**
-     * Processe update:
+     * Process update:
      * - soft delete old entries
      * - add new entries
      * - update existing entries
      * - restore previously deleted entries
+     *
+     * @deprecated
      */
     public function applyUpdate()
     {
@@ -85,7 +83,7 @@ class UserDataRepository
     /**
      * Adding new row to the userdata table
      *
-     * @param UserDataDTO $userdata
+     * @param EntryDTO $userdata
      */
     /*public function addRow(UserdataDTO $userdata) {
         DB::insert("INSERT INTO userdata(customer_id, first_name, last_name, card_number) values(?, ?, ?, ?)", $userdata->toArray());
@@ -97,6 +95,10 @@ class UserDataRepository
      * @param $rows
      */
     public function bulkInsert($rows) { //work_table_name -> model->getTable
+        if (empty($rows)) {
+            return;
+        }
+
         DB::table(WORK_TABLE_NAME)->insert($rows); //performance (compare with one-by-one)
     }
 
@@ -115,14 +117,18 @@ class UserDataRepository
      * @param $rows
      */
     public function bulkInsertSql($rows) {
+        if (empty($rows)) {
+            return;
+        }
+
         $values = [];
         foreach($rows as $row) {
             $values = array_merge($values, array_values($row));
         }
 
-        DB::insert("INSERT INTO " . WORK_TABLE_NAME . "(id,identifier,first_name,last_name,card_number,status_id) "
+        DB::insert("INSERT INTO " . WORK_TABLE_NAME . "(id,identifier,first_name,last_name,card_number,raw_data,status_id,status_details) "
             . "VALUES ".
-            rtrim(str_repeat("(NULL,?,?,?,?,". ENTRY_STATUS_UNKNOWN . "),",count($rows)),","),
+            rtrim(str_repeat("(NULL,?,?,?,?,?,?,?),",count($rows)),","),
             $values);
     }
 
@@ -142,6 +148,10 @@ class UserDataRepository
      * @param $rows
      */
     public function bulkInsertSqlRaw($rows) {
+        if (empty($rows)) {
+            return;
+        }
+
         $values = "";
         foreach ($rows as $row) {
             $values .= "(NULL,'".addslashes($row['identifier'])."','".addslashes($row['first_name'])."','".addslashes($row['last_name'])."','".addslashes($row['card_number'])."',". ENTRY_STATUS_UNKNOWN . "),";
@@ -167,12 +177,17 @@ class UserDataRepository
     public function markIdentifierDuplicates() { // who is whose duplicate!
         DB::table(WORK_TABLE_NAME .' as u1')
             ->join(WORK_TABLE_NAME .' as u2', 'u1.identifier', '=', 'u2.identifier')
-            ->where([
-                ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN], // AND NOT _REJECTED
-                ['u2.status_id', '=', ENTRY_STATUS_UNKNOWN],
-            ])
+            //->where([
+            //    ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN], // AND NOT _REJECTED
+            //    ['u2.status_id', '=', ENTRY_STATUS_UNKNOWN],
+            //])
             ->whereRaw('u1.id <> u2.id')
-            ->update(['u1.status_id' => ENTRY_STATUS_ID_DUPLICATE]);
+            ->update([
+                'u1.status_id' => ENTRY_STATUS_REJECTED,
+                'u1.status_details' => DB::raw("CONCAT(u1.status_details, IF(u1.status_id <> " . ENTRY_STATUS_UNKNOWN . ", '; ', ''),
+                    'Identifier duplicate, the same as line ', u2.id)")
+            ]);
+
     }
 
     /**
@@ -182,12 +197,16 @@ class UserDataRepository
     public function markCardNumberDuplicates() { // do update however is called validate
         DB::table(WORK_TABLE_NAME .' as u1')
             ->join(WORK_TABLE_NAME .' as u2', 'u1.card_number', '=', 'u2.card_number')
-            ->where([
-                ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN],
-                ['u2.status_id', '=', ENTRY_STATUS_UNKNOWN],
-            ])
+            //->where([
+            //    ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN],
+            //    ['u2.status_id', '=', ENTRY_STATUS_UNKNOWN],
+            //])
             ->whereRaw('u1.id <> u2.id')
-            ->update(['u1.status_id' => ENTRY_STATUS_CARDNUMBER_DUPLICATE]);
+            ->update([
+                'u1.status_id' => ENTRY_STATUS_REJECTED,
+                'u1.status_details' => DB::raw("CONCAT(u1.status_details, IF(u1.status_id <> " . ENTRY_STATUS_UNKNOWN . ", '; ', ''),
+                    'Card Number duplicate, the same as line ', u2.id)")
+            ]);
     }
 
 
@@ -198,11 +217,13 @@ class UserDataRepository
         // we'd maybe better go with subquery
         DB::table(WORK_TABLE_NAME .' as u1')
             ->join('customers' .' as u2', 'u1.card_number', '=', 'u2.card_number')
-            ->where([
-                ['u1.status_id', '=', ENTRY_STATUS_UNKNOWN],
-            ])
+            //->where([['u1.status_id', '=', ENTRY_STATUS_UNKNOWN],])
             ->whereRaw('u1.identifier <> u2.id AND u2.deleted_at IS NULL')
-            ->update(['u1.status_id' => ENTRY_STATUS_CARDNUMBER_ALREADY_TAKEN]);
+            ->update([
+                'u1.status_id' => ENTRY_STATUS_REJECTED,
+                'u1.status_details' => DB::raw("CONCAT(u1.status_details, IF(u1.status_id <> " . ENTRY_STATUS_UNKNOWN . ", '; ', ''),
+                    'Card Number already taken, Customer id ', u2.id)")
+            ]);
     }
 
     /**
@@ -396,7 +417,7 @@ class UserDataRepository
     public function getEntriesWithStatusId($status_id)
     {
         return DB::table(WORK_TABLE_NAME .' as u1')
-            ->where('status_id', ENTRY_STATUS_PARSE_ERROR)
+            ->where('status_id', $status_id)
             ->get();
     }
 

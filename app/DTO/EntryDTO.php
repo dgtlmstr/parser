@@ -6,7 +6,7 @@ namespace App\DTO;
  *
  * @package App\DTO
  */
-class UserDataDTO {
+class EntryDTO {
     private $customerId = 0;
     private $firstName = "";
     private $lastName = "";

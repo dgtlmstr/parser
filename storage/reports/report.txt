@@ -1,58 +1,54 @@
-Customer deleted
-Customer deleted
-Customer deleted
-Customer deleted
-Deleted: customer [778]
-Customer deleted
-Deleted: customer [778]
-Customer deleted
-Deleted: customer [778] Name Last name, Card
-Bad identifier found! Update failed
-Identifier duplicates count: 0 
-Card number duplicates count: 0 
-Card number already taken count: 0 
-Entries to add: 0 
-Entries to update: 0 
-Entries to restore: 0 
-Entries to delete: 0 
-Entries not changed: 0 
-Total entries: 0 
-Bad identifier entries: 0Parse error entries: 0Identifier duplicate entries: 22953Card number duplicate entries: 0Card already taken entries: 0Entries to add: 2047Entries to update: 0Entries to restore: 0Entries to delete: 0Entries can't be deleted: 0Entries not changed: 0Total entries: 0Bad identifier entries: 0Parse error entries: 0Identifier duplicate entries: 22953Card number duplicate entries: 0Card already taken entries: 0Entries to add: 2047Entries to update: 0Entries to restore: 0Entries to delete: 0Entries can't be deleted: 0Entries not changed: 0Total entries: 0Bad Identifier entries
-Parse error entries
-Identifier duplicate entries
-Card number dupicate entries
-Card number already taken entries
-Bad identifier entries: 0
-Parse error entries: 0
-Identifier duplicate entries: 22953
-Card number duplicate entries: 0
-Card already taken entries: 0
-Entries to add: 2047
+Rejected entries: 7
+Entries to add: 3
+Entries to update: 0
+Entries to restore: 0
+Entries to delete: 4
+Entries can't be deleted: 0
+Entries not changed: 0
+Total entries: 0
+Rejected entries
+Line 1: Identifier=9193, Identifier duplicate, the same as line 2; Card Number already taken, Customer id 111
+Line 2: Identifier=9193, Identifier duplicate, the same as line 1
+Line 3: Identifier=9193, Identifier duplicate, the same as line 1; Card Number duplicate, the same as line 4
+Line 4: Identifier=329, Card Number duplicate, the same as line 3
+Line 5: Identifier=7526, Card Number duplicate, the same as line 6
+Line 6: Identifier=1229, Card Number duplicate, the same as line 5
+Line 7: Identifier=0, Bad identifier
+Customer deleted test event listener caught
+Deleted customer: [111] Name1 Last1, 444444
+Customer deleted test event listener caught
+Deleted customer: [222] Name2 Last2, 555555
+Customer deleted test event listener caught
+Deleted customer: [777] Name2 Last2, 888888
+Customer deleted test event listener caught
+Deleted customer: [778] Name Last name, Card
+Rejected entries: 6
+Entries to add: 4
 Entries to update: 0
 Entries to restore: 0
 Entries to delete: 0
 Entries can't be deleted: 0
 Entries not changed: 0
 Total entries: 0
-Bad Identifier entries
-Parse error entries
-Identifier duplicate entries
-Card number dupicate entries
-Card number already taken entries
-Bad identifier entries: 0
-Parse error entries: 0
-Identifier duplicate entries: 22953
-Card number duplicate entries: 0
-Card already taken entries: 0
-Entries to add: 2047
+Rejected entries
+Line 1: Identifier=9193, Identifier duplicate, the same as line 2; Card Number already taken, Customer id 111
+Line 2: Identifier=9193, Identifier duplicate, the same as line 1
+Line 3: Identifier=9193, Identifier duplicate, the same as line 1; Card Number duplicate, the same as line 4
+Line 4: Identifier=329, Card Number duplicate, the same as line 3
+Line 5: Identifier=7526, Card Number duplicate, the same as line 6
+Line 6: Identifier=1229, Card Number duplicate, the same as line 5
+Rejected entries: 6
+Entries to add: 4
 Entries to update: 0
 Entries to restore: 0
 Entries to delete: 0
 Entries can't be deleted: 0
 Entries not changed: 0
 Total entries: 0
-Bad Identifier entries
-Parse error entries
-Identifier duplicate entries
-Card number dupicate entries
-Card number already taken entries
+Rejected entries
+Line 1: Identifier=9193, Identifier duplicate, the same as line 2
+Line 2: Identifier=9193, Identifier duplicate, the same as line 1
+Line 3: Identifier=9193, Identifier duplicate, the same as line 1; Card Number duplicate, the same as line 4
+Line 4: Identifier=329, Card Number duplicate, the same as line 3
+Line 5: Identifier=7526, Card Number duplicate, the same as line 6
+Line 6: Identifier=1229, Card Number duplicate, the same as line 5

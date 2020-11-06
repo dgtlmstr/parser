@@ -71,10 +71,11 @@ class ParseUpdate extends Command
             $reportManager = $this->parseManager->getReportManager();
             $reportManager->reportSummary();
             $this->line($reportManager->getSummary());
-            $reportManager->reportInvalidEntries();
+            $reportManager->reportRejectedEntries();
+            //.. report update entries
 
             return 0;
-        } catch (\Exception $exception) {
+        } catch (Exception $exception) {
             $this->line(date('[H:i:s] ') . "Update failed");
             return 1;
         }

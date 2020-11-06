@@ -1,7 +1,8 @@
 <?php
 namespace App\Services;
 
-use App\Repositories\UserDataRepository;
+use App\DTO\EntryStatusDTO;
+use App\Repositories\EntryRepository;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -44,9 +45,9 @@ class ParseCsvManager
     /**
      * The instance of the Userdata Repository.
      *
-     * @var UserDataRepository
+     * @var EntryRepository
      */
-    protected $userDataRepository;
+    protected $entryRepository;
 
     /**
      * The Array to buffer entries for bulk insert to the work table.
@@ -63,23 +64,30 @@ class ParseCsvManager
     protected $entriesBufferCount;
 
     /**
+     * Warning is being set on bad identifier found during parsing process.
+     *
+     * @var bool
+     */
+    protected $badIdFound = false;
+
+    /**
      * Create a new Parser instance.
      *
      * @param FileService $fileService
      * @param ReaderInterface $csvReader
-     * @param UserDataRepository $userDataRepository
+     * @param EntryRepository $entryRepository
      */
     public function __construct(
         FileService $fileService,
         ReaderInterface $csvReader,
-        UserDataRepository $userDataRepository
+        EntryRepository $entryRepository
     ){
         $this->fileService = $fileService;
         $this->fileService->setFolder(env("UPDATE_DIR_PATH"));
         $this->fileService->setFilename(env("UPDATE_FILENAME"));
 
         $this->csvReader = $csvReader;
-        $this->userDataRepository = $userDataRepository;  // replace with abstraction
+        $this->entryRepository = $entryRepository;
     }
 
     /**
@@ -98,14 +106,16 @@ class ParseCsvManager
             return false;
         }
 
-        for(;$filePointer->valid(); $filePointer->next()) {
-            $row = $filePointer->current();
-            if ($row[0] === null) { // try to avoid
-                continue;
-            }
+        foreach ($filePointer as $row) {
+        //for(;$filePointer->valid(); $filePointer->next()) {
+            //$row = $filePointer->current();
+            //if ($row[0] === null) { // try to avoid, maybe League CSV
+            //    continue;
+            //}
 
             $entry = $this->mapEntry($row);
-            $entry['status_id'] = $this->validateEntry($entry);
+            $entryStatusList = $this->validateEntry($entry);
+            $entry = $this->prepareEntryStatus($entry, $entryStatusList);
             $this->saveEntry($entry);
         }
 
@@ -143,41 +153,55 @@ class ParseCsvManager
     /**
      * Map raw CSV entry to user data DTO.
      *
-     * @param $csvEntry
+     * @param $record
      * @return array
      */
-    protected function mapEntry($csvEntry) {
+    protected function mapEntry($record) {
         //todo: mapping based on config
-        $userdata = [];
+        $entry = [];
 
-        $userdata['identifier'] = $csvEntry[0];
-        $userdata['first_name'] = $csvEntry[1] ?? "";
-        $userdata['last_name'] = $csvEntry[2] ?? "";
-        $userdata['card_number'] = $csvEntry[3] ?? "";
+        $csvEntry = array_values($record);
+        $entry['identifier'] = !empty($csvEntry[0]) ? $csvEntry[0] : 0;
+        $entry['first_name'] = $csvEntry[1] ?? "";
+        $entry['last_name'] = $csvEntry[2] ?? "";
+        $entry['card_number'] = $csvEntry[3] ?? "";
 
-        return $userdata;
+        $entry['raw_data'] = json_encode($record);
+
+        return $entry;
     }
 
     /**
      * Check if entry from CSV passes type validation.
-     * Return entry validation status.
+     * Return entry validation status array
      *
-     * @param $userdata
-     * @return int
+     * @param $entry
+     * @return array
      */
-    protected function validateEntry($userdata) : int { //performance
-        if ($this->validateIdentifier($userdata['identifier'])) {
-            return ENTRY_STATUS_PARSE_BAD_ID;
+    protected function validateEntry($entry) : array { //performance
+        $entryStatusList = [];
+
+        if (!$this->validateIdentifier($entry['identifier'])) {
+            $entryStatusList[] = new EntryStatusDTO(ENTRY_STATUS_PARSE_BAD_ID, "Bad identifier");
+            $this->badIdFound($entryStatusList);
         }
 
-        $validator = Validator::make($userdata, [
-            'identifier' => 'required|numeric', //find all empty and inform, stop on empty id
+        $validator = Validator::make($entry, [
+            'identifier' => 'required|numeric',
             'first_name' => 'required|string|max:30',
             'last_name' => 'required|string|max:30',
             'card_number' => 'required|string|max:16',
         ]);
 
-        return $validator->fails() ? ENTRY_STATUS_PARSE_ERROR : ENTRY_STATUS_UNKNOWN;
+        if ($validator->fails()) {
+            $entryStatusList[] = new EntryStatusDTO(ENTRY_STATUS_PARSE_ERROR, "Entry parse validation fails");
+        }
+
+        if (empty($entryStatusList)) {
+            $entryStatusList[] = new EntryStatusDTO(ENTRY_STATUS_UNKNOWN, "");
+        }
+
+        return $entryStatusList;
     }
 
     /**
@@ -195,41 +219,81 @@ class ParseCsvManager
      * Commit entries to DB
      */
     protected function commitEntries() {
-        if ($this->entriesBufferCount == 0) return; //check just with the last commit
-
         if (self::PARSER_INSERT_MODE == 'bulk') {
-            $this->userDataRepository->bulkInsert($this->entriesBuffer);
+            $this->entryRepository->bulkInsert($this->entriesBuffer);
         } else if (self::PARSER_INSERT_MODE == 'single') {
-            $this->userDataRepository->singleInsert($this->entriesBuffer[0]);
+            $this->entryRepository->singleInsert($this->entriesBuffer[0]);
         } else if (self::PARSER_INSERT_MODE == 'bulkSql') {
-            $this->userDataRepository->bulkInsertSql($this->entriesBuffer);
+            $this->entryRepository->bulkInsertSql($this->entriesBuffer);
         } else if (self::PARSER_INSERT_MODE == 'singleSql') {
-            $this->userDataRepository->singleInsertSql($this->entriesBuffer[0]);
+            $this->entryRepository->singleInsertSql($this->entriesBuffer[0]);
         } else if (self::PARSER_INSERT_MODE == 'bulkSqlRaw') {
-            $this->userDataRepository->bulkInsertSqlRaw($this->entriesBuffer);
+            $this->entryRepository->bulkInsertSqlRaw($this->entriesBuffer);
         } else if (self::PARSER_INSERT_MODE == 'singleSqlRaw') {
-            $this->userDataRepository->singleInsertSqlRaw($this->entriesBuffer[0]);
+            $this->entryRepository->singleInsertSqlRaw($this->entriesBuffer[0]);
         }
     }
 
     /**
      * Add entry to DB buffer and bulk insert to the DB when the buffer is full.
      *
-     * @param $userdata
+     * @param $entry
      */
-    protected function saveEntry($userdata) {
-        $this->entriesBuffer[] = $userdata;
+    protected function saveEntry($entry) {
+        $this->entriesBuffer[] = $entry;
         $this->entriesBufferCount++;
 
         if (self::PARSER_INSERT_MODE == 'single' ||
             self::PARSER_INSERT_MODE == 'singleSql' ||
             self::PARSER_INSERT_MODE == 'singleSqlRaw' ||
-            $this->entriesBufferCount == self::BULK_INSERT_LIMIT) { //make counter for better performance
+            $this->entriesBufferCount == self::BULK_INSERT_LIMIT) {
             $this->commitEntries();
             $this->entriesBufferCount = 0;
 
             unset($this->entriesBuffer); //maybe remove, test performance
             $this->entriesBuffer = [];
         }
+    }
+
+    /**
+     * Add entry status id and details to the entry item.
+     *
+     * @param array $entry
+     * @param array $entryStatusList
+     * @return array
+     */
+    protected function prepareEntryStatus(array $entry, array $entryStatusList) {
+        $statusId = ENTRY_STATUS_UNKNOWN;
+        $statusDetails = "";
+
+        foreach ($entryStatusList as $entryStatus) {
+            if ($entryStatus->getStatusid() != ENTRY_STATUS_UNKNOWN) {
+                $statusId = ENTRY_STATUS_REJECTED;
+                $statusDetails .= (!empty($statusDetails) ? "; " : "") . "{$entryStatus->getStatusDetails()}";
+            }
+        }
+
+        $entry['status_id'] = $statusId;
+        $entry['status_details'] = $statusDetails;
+
+        return $entry;
+    }
+
+    /**
+     * Set Ba Id warning if found bad identifier.
+     *
+     * @param array $entryStatusList
+     */
+    protected function badIdFound(array $entryStatusList) {
+        $this->badIdFound = true;
+    }
+
+    /**
+     * Return true when bad identifiers where found during parsing process.
+     *
+     * @return bool
+     */
+    public function hasBadIds() {
+        return $this->badIdFound;
     }
 }

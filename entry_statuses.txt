@@ -1,0 +1,30 @@
+1. entry_statuses table
++ easy to work with when getting list, applying updates.
++ custom messages for each status
+
+- extra db constructions
+First put status_id and message to Entries on parsing.
+Then copy to statuses.
+
+2. statuses columns
+entries.status_{BAD_ID} boolean
+entries.status_{PARSE_ERROR} boolean
+entries.status_{CARD_DUP} boolean
+
++ single table
++ easy to work with when getting custom status lists
+
+- tricky coding especially because of custom configuration
+- hard to get custom messages
+
+3. status JSON column
+? is it supported by database
+
+--
+row.id
+{received data} - string|json
+{mapped data} - by columns
+status {rejected|restored|updated|deleted|added}
+problem details
+
+no need for custom rejected rows finding

@@ -3,7 +3,7 @@ namespace App\Services;
 
 use App\Events\DeleteCustomer;
 use App\Repositories\CustomerRepository;
-use App\Repositories\UserDataRepository;
+use App\Repositories\EntryRepository;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
@@ -18,9 +18,9 @@ class ParseDatabaseManager
     /**
      * The instance of the Userdata Repository.
      *
-     * @var UserDataRepository
+     * @var EntryRepository
      */
-    protected $userDataRepository;
+    protected $entryRepository;
 
     /**
      * The instance of Customer Repository.
@@ -41,16 +41,16 @@ class ParseDatabaseManager
 
     /**
      * ParseDatabaseManager constructor.
-     * @param UserDataRepository $userDataRepository
+     * @param EntryRepository $entryRepository
      * @param CustomerRepository $customerRepository
      * @param ReportFormatService $reportFormatService
      */
     public function __construct(
-        UserDataRepository $userDataRepository,
+        EntryRepository $entryRepository,
         CustomerRepository $customerRepository,
         ReportFormatService $reportFormatService
     ) {
-        $this->userDataRepository = $userDataRepository;
+        $this->entryRepository = $entryRepository;
         $this->customerRepository = $customerRepository;
         $this->reportFormatService = $reportFormatService;
     }
@@ -77,7 +77,9 @@ class ParseDatabaseManager
             $table->string('first_name', 30);
             $table->string('last_name', 30);
             $table->string('card_number');
+            $table->string('raw_data')->default("");
             $table->integer('status_id')->default(ENTRY_STATUS_UNKNOWN);
+            $table->string('status_details')->default("");
             $table->index(['identifier']);
             $table->index(['card_number']);
             $table->index(['status_id']);
@@ -109,9 +111,9 @@ class ParseDatabaseManager
      */
     public function validateEntries() {
         //todo: make calls based on Config
-        $this->userDataRepository->markIdentifierDuplicates();
-        $this->userDataRepository->markCardNumberDuplicates();
-        $this->userDataRepository->markEntriesWithCardNumbersAlreadyTaken();
+        $this->entryRepository->markIdentifierDuplicates();
+        $this->entryRepository->markCardNumberDuplicates();
+        $this->entryRepository->markEntriesWithCardNumbersAlreadyTaken();
     }
 
     /**
@@ -119,10 +121,10 @@ class ParseDatabaseManager
      */
     public function defineActionsForEntries() {
         //todo: define entry operations in Config
-        $this->userDataRepository->markEntriesToAdd();
-        $this->userDataRepository->markEntriesToUpdate();
-        $this->userDataRepository->markEntriesToRestore();
-        $this->userDataRepository->markEntriesNotChanged();
+        $this->entryRepository->markEntriesToAdd();
+        $this->entryRepository->markEntriesToUpdate();
+        $this->entryRepository->markEntriesToRestore();
+        $this->entryRepository->markEntriesNotChanged();
     }
 
     /**
@@ -141,7 +143,7 @@ class ParseDatabaseManager
      * Process row deleting.
      */
     protected function deleteRows() {
-        $cursor = $this->userDataRepository->getCursorForDeleteRows();
+        $cursor = $this->entryRepository->getCursorForDeleteRows();
 
         foreach ($cursor as $row) {
             // transaction performance - mass delete vs one-by-one, people+users
@@ -162,7 +164,7 @@ class ParseDatabaseManager
      * Process row restoring.
      */
     protected function restoreRows() {
-        $cursor = $this->userDataRepository->getCursorForRestoreRows();
+        $cursor = $this->entryRepository->getCursorForRestoreRows();
         //todo
     }
 
@@ -170,7 +172,7 @@ class ParseDatabaseManager
      * Process row updating.
      */
     protected function updateRows() {
-        $cursor = $this->userDataRepository->getCursorForUpdateRows();
+        $cursor = $this->entryRepository->getCursorForUpdateRows();
         //todo
     }
 
@@ -178,7 +180,7 @@ class ParseDatabaseManager
      * Process row adding.
      */
     protected function addRows() {
-        $cursor = $this->userDataRepository->getCursorForAddRows();
+        $cursor = $this->entryRepository->getCursorForAddRows();
         //todo
     }
 
